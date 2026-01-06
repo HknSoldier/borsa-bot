@@ -149,4 +149,4 @@ if 9 <= saat <= 18:
             status.text(f"🔍 {hisse}")
             bar.progress((i+1)/len(ACTIVE_WHITELIST))
             
-            df = tv.get_hist(symbol=hisse, exchange='
+            df = tv.get_hist(symbol=hisse, exchange='BIST', interval=PERIYOT, n_bars=100)

@@ -1,4 +1,3 @@
-# Guncelleme V2
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -151,3 +150,68 @@ if 9 <= saat <= 18:
             bar.progress((i+1)/len(ACTIVE_WHITELIST))
             
             df = tv.get_hist(symbol=hisse, exchange='BIST', interval=PERIYOT, n_bars=100)
+            if df is None: continue
+            
+            buy, sell, wt1, wt2 = wavetrend_check(df)
+            
+            df.rename(columns={'high':'High','low':'Low','close':'Close','open':'Open','volume':'Volume'}, inplace=True)
+            fiyat = df['Close'].iloc[-1]
+            su_an = time.time() # Şimdiki zaman (Saniye cinsinden)
+            
+            # --- SENARYO 1: AL SİNYALİ ---
+            if buy:
+                puan = 50 + (wt1 - wt2)*5
+                if df['Volume'].iloc[-1] > df['Volume'].iloc[-20:-1].mean(): puan += 15
+                if wt1 < -60: puan += 10
+                puan = min(100, int(puan))
+                
+                gonder = False
+                if piyasa_modu == "NORMAL" and puan >= 60: gonder = True
+                if piyasa_modu == "DEFANSIF" and puan >= 85: gonder = True
+                
+                if gonder:
+                    giris = ml.optimal_giris(df)
+                    atr = ml.calculate_atr(df)
+                    stop_loss = giris - (atr * 1.5)
+                    
+                    msg = f"🟢 <b>YENİ FIRSAT! (#{hisse})</b>\n\n"
+                    msg += f"🦁 <b>Hisse:</b> #{hisse}\n"
+                    msg += f"⭐ <b>Kalite:</b> {puan}/100\n"
+                    msg += f"💰 <b>Fiyat:</b> {fiyat} TL\n"
+                    msg += f"🧠 <b>AI Giriş:</b> {giris} TL\n"
+                    msg += f"🛑 <b>Stop:</b> {round(stop_loss, 2)} TL\n\n"
+                    send_telegram(msg)
+                    sinyal_sayisi += 1
+                    
+                    # HAFIZAYA KAYDET
+                    hafiza[hisse] = su_an
+                    hafiza_kaydet(hafiza)
+            
+            # --- SENARYO 2: SAT SİNYALİ (24 SAAT KURALI) ---
+            elif sell:
+                # KURAL: Bu hisse için son 24 saat içinde AL sinyali ürettik mi?
+                if hisse in hafiza:
+                    alim_zamani = hafiza[hisse]
+                    gecen_sure = su_an - alim_zamani
+                    
+                    if gecen_sure <= 86400: # Eğer 24 saat dolmadıysa UYARI AT
+                        msg = f"🔴 <b>ERKEN UYARI! (#{hisse})</b>\n\n"
+                        msg += f"🦁 <b>Hisse:</b> #{hisse}\n"
+                        msg += f"📉 <b>Durum:</b> Trend 24 saat dolmadan bozuldu!\n"
+                        msg += f"💰 <b>Anlık Fiyat:</b> {fiyat} TL\n"
+                        msg += f"💡 <b>Tavsiye:</b> Stop Ol / Satış Yap.\n\n"
+                        send_telegram(msg)
+                        sinyal_sayisi += 1
+                        
+                        del hafiza[hisse]
+                        hafiza_kaydet(hafiza)
+                    else:
+                        # 24 saati geçmiş, listeden temizle.
+                        del hafiza[hisse]
+                        hafiza_kaydet(hafiza)
+
+        except: pass
+    
+    status.success(f"Tur Bitti. {sinyal_sayisi} işlem bildirildi.")
+else:
+    st.warning("🌙 Gece Modu.")

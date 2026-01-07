@@ -13,20 +13,18 @@ from tvDatafeed import TvDatafeed, Interval
 from sklearn.linear_model import LinearRegression
 
 # ==========================================
-# 1. MÜHİMMATLAR VE AYARLAR
+# 1. AYARLAR
 # ==========================================
 
-# TELEGRAM BİLGİLERİN
 TELEGRAM_TOKEN = "7977796977:AAHNn1m3WbzfRTHOocfYTpQuhN6OWMRdwXg"
 TELEGRAM_GROUP_ID = "-1003588305277" 
 
-# ÇİFT SESSION ID (ANA VE YEDEK)
 SESSION_IDS = [
-    "v86ido9xj2o78ync4lz4q3ylpytwofne",  # 1. Anahtar
-    "8kmfkpq73eqmpnzfwv3vpbi28hp1zktv"   # 2. Anahtar
+    "v86ido9xj2o78ync4lz4q3ylpytwofne",
+    "8kmfkpq73eqmpnzfwv3vpbi28hp1zktv"
 ]
 
-# 511 HİSSELİK LİSTE (Word Dosyasından Temizlenmiş)
+# 511 HİSSELİK LİSTE
 ACTIVE_WHITELIST = [
     'AVOD', 'A1CAP', 'A1YEN', 'ACSEL', 'ADEL', 'ADESE', 'AFYON', 'AHSGY', 'AKENR', 'AKSUE', 
     'ALCAR', 'ALCTL', 'ALKIM', 'ALKA', 'ALKLC', 'AYCES', 'ALVES', 'ASUZU', 'ANGEN', 'ANELE', 
@@ -82,65 +80,61 @@ ACTIVE_WHITELIST = [
     'ZRGYO', 'ZOREN'
 ]
 
-# Hafıza Dosyası
 HAFIZA_DOSYASI = "sinyal_hafizasi.json"
 
 # ==========================================
-# 2. BAĞLANTI & VERİ MOTORU (YENİ SİSTEM)
+# 2. MOTORLAR (MULTI-TIMEFRAME ENGINE)
 # ==========================================
 
 def init_tv_failover():
-    """ÇİFT MOTOR + YFINANCE DESTEKLİ BAĞLANTI"""
-    # 1. VIP Anahtarları Dene
     for index, sess_id in enumerate(SESSION_IDS):
         try:
             temp_tv = TvDatafeed()
-            session_obj = None
+            # Session Enjeksiyonu
+            s_obj = None
             for attr in dir(temp_tv):
                 try:
-                    val = getattr(temp_tv, attr)
-                    if isinstance(val, requests.Session):
-                        session_obj = val
+                    if isinstance(getattr(temp_tv, attr), requests.Session):
+                        s_obj = getattr(temp_tv, attr)
                         break
                 except: continue
             
-            if session_obj:
-                session_obj.cookies.update({'sessionid': sess_id})
-                session_obj.headers.update({'User-Agent': 'Mozilla/5.0'})
+            if s_obj:
+                s_obj.cookies.update({'sessionid': sess_id})
+                s_obj.headers.update({'User-Agent': 'Mozilla/5.0'})
             else:
                 temp_tv.session = requests.Session()
                 temp_tv.session.cookies.update({'sessionid': sess_id})
 
-            test = temp_tv.get_hist('THYAO', 'BIST', Interval.in_daily, n_bars=2)
-            if test is not None and not test.empty:
+            if not temp_tv.get_hist('THYAO', 'BIST', Interval.in_daily, n_bars=1).empty:
                 return temp_tv, "TV"
         except: continue
     
-    # 2. Misafir Modu Dene
     try:
-        temp_tv = TvDatafeed()
-        test = temp_tv.get_hist('THYAO', 'BIST', Interval.in_daily, n_bars=2)
-        if test is not None and not test.empty:
-            return temp_tv, "TV"
+        if not TvDatafeed().get_hist('THYAO', 'BIST', Interval.in_daily, n_bars=1).empty:
+            return TvDatafeed(), "TV"
     except: pass
-
-    # 3. YFinance (C Planı)
+    
     try:
-        test = yf.download("THYAO.IS", period="2d", progress=False)
-        if not test.empty:
+        if not yf.download("THYAO.IS", period="1d", progress=False).empty:
             return None, "YF"
     except: pass
-
     return None, "FAIL"
 
-def get_data(symbol, tv_object, source_type):
-    """VERİ ÇEKME MOTORU (TV ve YF UYUMLU)"""
+def get_data(symbol, tv_object, source_type, timeframe):
+    """
+    timeframe: 'DAILY' veya 'HOURLY'
+    """
     try:
         if source_type == "TV":
-            return tv_object.get_hist(symbol=symbol, exchange='BIST', interval=Interval.in_1_hour, n_bars=100)
+            interval = Interval.in_daily if timeframe == 'DAILY' else Interval.in_1_hour
+            return tv_object.get_hist(symbol=symbol, exchange='BIST', interval=interval, n_bars=100)
+        
         elif source_type == "YF":
             yf_sym = symbol + ".IS"
-            df = yf.download(yf_sym, period="1mo", interval="1h", progress=False)
+            p = "6mo" if timeframe == 'DAILY' else "1mo"
+            i = "1d" if timeframe == 'DAILY' else "1h"
+            df = yf.download(yf_sym, period=p, interval=i, progress=False)
             if not df.empty:
                 df = df.rename(columns={"Open":"open","High":"high","Low":"low","Close":"close","Volume":"volume"})
                 if isinstance(df.columns, pd.MultiIndex):
@@ -151,40 +145,15 @@ def get_data(symbol, tv_object, source_type):
     return None
 
 # ==========================================
-# 3. ANALİZ MOTORU & HAFIZA
+# 3. ZEKA (ML & ANALİZ)
 # ==========================================
-
-def tr_saat():
-    tz = pytz.timezone('Europe/Istanbul')
-    return datetime.now(tz)
-
-def hafiza_yukle():
-    if os.path.exists(HAFIZA_DOSYASI):
-        try:
-            with open(HAFIZA_DOSYASI, 'r') as f: return json.load(f)
-        except: return {}
-    return {}
-
-def hafiza_kaydet(data):
-    try:
-        with open(HAFIZA_DOSYASI, 'w') as f: json.dump(data, f)
-    except: pass
-
-def send_telegram(message):
-    simdi = tr_saat()
-    # 09:00 - 18:30 arası mesaj izni
-    if (simdi.hour >= 9) and (simdi.hour <= 18):
-        try:
-            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-            data = {"chat_id": TELEGRAM_GROUP_ID, "text": message, "parse_mode": "HTML"}
-            requests.post(url, data=data, timeout=5)
-        except: pass
 
 class MLEngine:
     def __init__(self):
         self.model = LinearRegression()
     
     def optimal_giris(self, df):
+        """Saatlik veriyi kullanarak hassas giriş hesaplar"""
         try:
             df.columns = [c.capitalize() for c in df.columns] 
             df['Volatility'] = df['High'] - df['Low']
@@ -195,7 +164,8 @@ class MLEngine:
             self.model.fit(X, y)
             curr = [[df['Volatility'].iloc[-1], df['Body'].iloc[-1]]]
             pred = self.model.predict(curr)[0]
-            return round(min(pred, df['Close'].iloc[-1] * 0.997), 2)
+            # Anlık fiyattan biraz daha aşağıda güvenli bir yer arar
+            return round(min(pred, df['Close'].iloc[-1] * 0.998), 2)
         except: return round(df['Close'].iloc[-1], 2)
 
     def calculate_atr(self, df, period=14):
@@ -223,103 +193,123 @@ def wavetrend_check(df):
         wt1_prev = wt1.iloc[-2]
         wt2_prev = wt2.iloc[-2]
         
+        # GÜNLÜKTE AL SİNYALİ (Trend Başlangıcı)
         buy = (wt1_prev < wt2_prev) and (wt1_now > wt2_now) and (wt1_prev < -40)
         sell = (wt1_prev > wt2_prev) and (wt1_now < wt2_now) and (wt1_prev > 40)
         
         return buy, sell, wt1_now, wt2_now
     except: return False, False, 0, 0
 
+def send_telegram(message):
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        data = {"chat_id": TELEGRAM_GROUP_ID, "text": message, "parse_mode": "HTML"}
+        requests.post(url, data=data, timeout=5)
+    except: pass
+
+def tr_saat():
+    return datetime.now(pytz.timezone('Europe/Istanbul'))
+
+def hafiza_islem(mode, data=None):
+    if mode == "load":
+        if os.path.exists(HAFIZA_DOSYASI):
+            try: 
+                with open(HAFIZA_DOSYASI, 'r') as f: return json.load(f)
+            except: return {}
+        return {}
+    elif mode == "save":
+        try: 
+            with open(HAFIZA_DOSYASI, 'w') as f: json.dump(data, f)
+        except: pass
+
 # ==========================================
-# 4. ANA DÖNGÜ (SAVAŞ KOMUTA MERKEZİ)
+# 4. ANA DÖNGÜ (STRATEJİ MERKEZİ)
 # ==========================================
 
-st.set_page_config(page_title="Hedge Fund Panel V2", page_icon="🦁", layout="wide")
-st.title("🦁 SNIPER AI - HYBRID SİSTEM")
+st.set_page_config(page_title="Sniper V4 - MultiTimeframe", page_icon="🦁", layout="wide")
+st.title("🦁 SNIPER AI - GÜNLÜK TREND + SAATLİK GİRİŞ")
 
-# BAĞLANTIYI KUR
 tv_obj, source_mode = init_tv_failover()
+ml = MLEngine()
+hafiza = hafiza_islem("load")
 
 if source_mode == "FAIL":
-    st.error("🚨 SİSTEM ÇÖKTÜ! HİÇBİR KAYNAKTAN VERİ ALINAMIYOR.")
+    st.error("🚨 SİSTEM ÇÖKTÜ!")
 else:
-    st.success(f"✅ BAĞLANTI AKTİF | MOD: {source_mode}")
-    
-    ml = MLEngine()
-    hafiza = hafiza_yukle()
+    st.success(f"✅ SİSTEM AKTİF | MOD: {source_mode} | STRATEJİ: Günlük Trend + Hassas Giriş")
     
     status = st.empty()
     bar = st.progress(0)
-    sinyal_sayisi = 0
-    
     simdi = tr_saat()
-    
-    # GECE MODU KONTROLÜ (09:00 - 18:30 arası çalış)
+    sinyal_sayisi = 0
+
     if 9 <= simdi.hour <= 18:
         for i, hisse in enumerate(ACTIVE_WHITELIST):
             try:
-                status.text(f"🔍 Taranıyor: {hisse} (Kaynak: {source_mode})")
+                status.text(f"🔍 {hisse} Analiz Ediliyor... (Günlük + Saatlik)")
                 bar.progress((i+1)/len(ACTIVE_WHITELIST))
                 
-                # Anti-Ban (Sadece TV modunda bekle)
-                if source_mode == "TV":
-                    time.sleep(random.uniform(0.5, 1.2))
+                # Anti-Ban
+                if source_mode == "TV": time.sleep(random.uniform(0.5, 1.2))
                 
-                # VERİYİ ÇEK
-                df = get_data(hisse, tv_obj, source_mode)
-                if df is None or df.empty: continue
+                # ADIM 1: GÜNLÜK VERİ ÇEK (Ana Trend)
+                df_daily = get_data(hisse, tv_obj, source_mode, "DAILY")
+                if df_daily is None or df_daily.empty: continue
                 
-                # ANALİZ
-                buy, sell, wt1, wt2 = wavetrend_check(df)
-                fiyat = df['close'].iloc[-1] if 'close' in df.columns else df['Close'].iloc[-1]
+                # ADIM 2: TREND KONTROLÜ
+                buy_daily, sell_daily, wt1, wt2 = wavetrend_check(df_daily)
+                
+                fiyat = df_daily['close'].iloc[-1] if 'close' in df_daily.columns else df_daily['Close'].iloc[-1]
                 su_an = time.time()
-                
-                # AL SİNYALİ
-                if buy:
+
+                # --- SENARYO 1: GÜNLÜKTE AL SİNYALİ VARSA ---
+                if buy_daily:
+                    # ADIM 3: SAATLİK VERİ ÇEK (Hassas Giriş İçin)
+                    df_hourly = get_data(hisse, tv_obj, source_mode, "HOURLY")
+                    
+                    # Puanlama (Günlük Veriyle)
                     puan = 50 + (wt1 - wt2)*5
-                    vol_col = 'Volume' if 'Volume' in df.columns else 'volume'
-                    if df[vol_col].iloc[-1] > df[vol_col].iloc[-20:-1].mean(): puan += 15
                     if wt1 < -60: puan += 10
                     puan = min(100, int(puan))
                     
                     if puan >= 60:
-                        giris = ml.optimal_giris(df)
-                        atr = ml.calculate_atr(df)
-                        stop_loss = giris - (atr * 1.5)
+                        # ADIM 4: ML İLE HASSAS GİRİŞ (Saatlik Veriyle)
+                        if df_hourly is not None and not df_hourly.empty:
+                            giris = ml.optimal_giris(df_hourly) # Saatlikten hesapla
+                        else:
+                            giris = fiyat # Saatlik yoksa anlık fiyat
                         
-                        msg = f"🟢 <b>YENİ FIRSAT! (#{hisse})</b>\n\n"
+                        # Stop Loss (Günlük ATR ile - Sağlamcı)
+                        atr = ml.calculate_atr(df_daily)
+                        stop_loss = giris - (atr * 1.5)
+
+                        msg = f"🟢 <b>DEV TREND BAŞLIYOR! (#{hisse})</b>\n\n"
                         msg += f"🦁 <b>Hisse:</b> #{hisse}\n"
+                        msg += f"📅 <b>Trend:</b> GÜNLÜK (Güvenli)\n"
                         msg += f"⭐ <b>Kalite:</b> {puan}/100\n"
-                        msg += f"💰 <b>Fiyat:</b> {fiyat} TL\n"
-                        msg += f"🧠 <b>AI Giriş:</b> {giris} TL\n"
-                        msg += f"🛑 <b>Stop:</b> {round(stop_loss, 2)} TL\n\n"
+                        msg += f"💰 <b>Anlık Fiyat:</b> {fiyat} TL\n"
+                        msg += f"🎯 <b>Nokta Atışı Giriş:</b> {giris} TL\n"
+                        msg += f"🛡️ <b>Güvenli Stop:</b> {round(stop_loss, 2)} TL\n\n"
                         
                         send_telegram(msg)
                         sinyal_sayisi += 1
-                        
                         hafiza[hisse] = su_an
-                        hafiza_kaydet(hafiza)
-                
-                # SAT SİNYALİ
-                elif sell:
+                        hafiza_islem("save", hafiza)
+
+                # --- SENARYO 2: SAT SİNYALİ ---
+                elif sell_daily:
                     if hisse in hafiza:
-                        alim_zamani = hafiza[hisse]
-                        if (su_an - alim_zamani) <= 86400: # 24 saat kuralı
-                            msg = f"🔴 <b>ERKEN UYARI! (#{hisse})</b>\n\n"
-                            msg += f"🦁 <b>Hisse:</b> #{hisse}\n"
-                            msg += f"📉 <b>Durum:</b> Trend 24 saat dolmadan bozuldu!\n"
-                            msg += f"💡 <b>Tavsiye:</b> Stop Ol / Satış Yap.\n\n"
+                        if (su_an - hafiza[hisse]) <= 172800: # 48 Saat (Günlük olduğu için süre uzadı)
+                            msg = f"🔴 <b>DİKKAT! TREND BOZULDU (#{hisse})</b>\nStop Ol / Kar Al."
                             send_telegram(msg)
-                            sinyal_sayisi += 1
                         del hafiza[hisse]
-                        hafiza_kaydet(hafiza)
-                        
+                        hafiza_islem("save", hafiza)
+
             except: continue
         
-        status.success(f"Tur Bitti. {sinyal_sayisi} işlem bulundu. Yeniden başlatılıyor...")
-        
+        status.success(f"Tur Tamamlandı. {sinyal_sayisi} yeni trend yakalandı.")
     else:
-        st.warning("🌙 Gece Modu. Piyasalar kapalı. Sistem uyku modunda.")
+        st.warning("🌙 Piyasa Kapalı.")
 
-    # --- SONSUZ DÖNGÜ (AUTO-RESTART) ---
-    time.sleep(60) # 1 Dakika bekle
-    st.rerun()     # BAŞA SAR VE TEKRARLA!
+    time.sleep(60)
+    st.rerun()

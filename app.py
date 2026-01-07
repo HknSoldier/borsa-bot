@@ -16,17 +16,17 @@ from sklearn.linear_model import LinearRegression
 # 1. MÜHİMMATLAR VE AYARLAR
 # ==========================================
 
-# 1. TELEGRAM BİLGİLERİN (Eski kodundan aldım ama buraya kendi bilgilerini tekrar kontrol et)
+# TELEGRAM BİLGİLERİN
 TELEGRAM_TOKEN = "7977796977:AAHNn1m3WbzfRTHOocfYTpQuhN6OWMRdwXg"
 TELEGRAM_GROUP_ID = "-1003588305277" 
 
-# 2. ÇİFT SESSION ID (ANA VE YEDEK)
+# ÇİFT SESSION ID (ANA VE YEDEK)
 SESSION_IDS = [
     "v86ido9xj2o78ync4lz4q3ylpytwofne",  # 1. Anahtar
     "8kmfkpq73eqmpnzfwv3vpbi28hp1zktv"   # 2. Anahtar
 ]
 
-# 3. YENİ 511 HİSSELİK LİSTE (Word Dosyasından Temizlenmiş)
+# 511 HİSSELİK LİSTE (Word Dosyasından Temizlenmiş)
 ACTIVE_WHITELIST = [
     'AVOD', 'A1CAP', 'A1YEN', 'ACSEL', 'ADEL', 'ADESE', 'AFYON', 'AHSGY', 'AKENR', 'AKSUE', 
     'ALCAR', 'ALCTL', 'ALKIM', 'ALKA', 'ALKLC', 'AYCES', 'ALVES', 'ASUZU', 'ANGEN', 'ANELE', 
@@ -91,9 +91,6 @@ HAFIZA_DOSYASI = "sinyal_hafizasi.json"
 
 def init_tv_failover():
     """ÇİFT MOTOR + YFINANCE DESTEKLİ BAĞLANTI"""
-    tv = None
-    source_mode = "YOK"
-    
     # 1. VIP Anahtarları Dene
     for index, sess_id in enumerate(SESSION_IDS):
         try:
@@ -154,7 +151,7 @@ def get_data(symbol, tv_object, source_type):
     return None
 
 # ==========================================
-# 3. ANALİZ MOTORU & HAFIZA (ESKİ SİSTEM)
+# 3. ANALİZ MOTORU & HAFIZA
 # ==========================================
 
 def tr_saat():
@@ -175,8 +172,8 @@ def hafiza_kaydet(data):
 
 def send_telegram(message):
     simdi = tr_saat()
-    # 09:50 - 18:15 arası mesaj izni
-    if (simdi.hour > 9 or (simdi.hour==9 and simdi.minute>=50)) and (simdi.hour < 18 or (simdi.hour==18 and simdi.minute<=15)):
+    # 09:00 - 18:30 arası mesaj izni
+    if (simdi.hour >= 9) and (simdi.hour <= 18):
         try:
             url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
             data = {"chat_id": TELEGRAM_GROUP_ID, "text": message, "parse_mode": "HTML"}
@@ -189,7 +186,6 @@ class MLEngine:
     
     def optimal_giris(self, df):
         try:
-            # Sütun isimlerini düzelt (Büyük/Küçük harf uyumu)
             df.columns = [c.capitalize() for c in df.columns] 
             df['Volatility'] = df['High'] - df['Low']
             df['Body'] = abs(df['Close'] - df['Open'])
@@ -268,26 +264,24 @@ else:
                 if source_mode == "TV":
                     time.sleep(random.uniform(0.5, 1.2))
                 
-                # VERİYİ ÇEK (Yeni Fonksiyon)
+                # VERİYİ ÇEK
                 df = get_data(hisse, tv_obj, source_mode)
                 if df is None or df.empty: continue
                 
-                # ANALİZ (Eski Mantık)
+                # ANALİZ
                 buy, sell, wt1, wt2 = wavetrend_check(df)
                 fiyat = df['close'].iloc[-1] if 'close' in df.columns else df['Close'].iloc[-1]
                 su_an = time.time()
                 
-                # --- SENARYO 1: AL SİNYALİ ---
+                # AL SİNYALİ
                 if buy:
-                    # Puanlama
                     puan = 50 + (wt1 - wt2)*5
-                    # Hacim kontrolü (Sütun adı uyumluluğu için check)
                     vol_col = 'Volume' if 'Volume' in df.columns else 'volume'
                     if df[vol_col].iloc[-1] > df[vol_col].iloc[-20:-1].mean(): puan += 15
                     if wt1 < -60: puan += 10
                     puan = min(100, int(puan))
                     
-                    if puan >= 60: # Eşik Değer
+                    if puan >= 60:
                         giris = ml.optimal_giris(df)
                         atr = ml.calculate_atr(df)
                         stop_loss = giris - (atr * 1.5)
@@ -305,7 +299,7 @@ else:
                         hafiza[hisse] = su_an
                         hafiza_kaydet(hafiza)
                 
-                # --- SENARYO 2: SAT SİNYALİ (24 SAAT KURALI) ---
+                # SAT SİNYALİ
                 elif sell:
                     if hisse in hafiza:
                         alim_zamani = hafiza[hisse]
@@ -316,13 +310,16 @@ else:
                             msg += f"💡 <b>Tavsiye:</b> Stop Ol / Satış Yap.\n\n"
                             send_telegram(msg)
                             sinyal_sayisi += 1
-                        
                         del hafiza[hisse]
                         hafiza_kaydet(hafiza)
                         
-            except Exception as e:
-                continue
+            except: continue
         
-        status.success(f"Tur Bitti. {sinyal_sayisi} işlem bildirildi.")
+        status.success(f"Tur Bitti. {sinyal_sayisi} işlem bulundu. Yeniden başlatılıyor...")
+        
     else:
-        st.warning("🌙 Gece Modu Aktif. Piyasa kapalıyken tarama yapılmaz.")
+        st.warning("🌙 Gece Modu. Piyasalar kapalı. Sistem uyku modunda.")
+
+    # --- SONSUZ DÖNGÜ (AUTO-RESTART) ---
+    time.sleep(60) # 1 Dakika bekle
+    st.rerun()     # BAŞA SAR VE TEKRARLA!

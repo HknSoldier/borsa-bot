@@ -140,7 +140,7 @@ def get_data(symbol, tv_object, source_type, timeframe):
     return None
 
 # ==========================================
-# 3. ZEKİ GİRİŞ MOTORU (SMART ENTRY)
+# 3. ZEKİ GİRİŞ VE HEDEF MOTORU (PRO MATH)
 # ==========================================
 
 class SmartEntryEngine:
@@ -160,35 +160,34 @@ class SmartEntryEngine:
 
     def calculate_smart_entry(self, df_hourly, current_price):
         """
-        VWAP ve EMA Destekli Akıllı Giriş
-        Amacı: Fiyatı öldürmeden, destek seviyesinden alım yapmak.
+        GİRİŞ MOTORU (Dokunulmadı - Senin sevdiğin V9 Mantığı)
+        Standart Sapma + VWAP = Kusursuz Giriş
         """
         try:
             df_hourly.columns = [c.capitalize() for c in df_hourly.columns]
             
-            # 1. Saatlik EMA 10 (Hızlı Destek)
-            ema10 = df_hourly['Close'].ewm(span=10, adjust=False).mean().iloc[-1]
+            # Standart Sapma Hesabı (Oynaklık)
+            std_dev = df_hourly['Close'].rolling(window=20).std().iloc[-1]
+            if pd.isna(std_dev): std_dev = current_price * 0.005 
             
-            # 2. Basit VWAP Yaklaşımı (Son Mum)
+            # VWAP (Adil Değer)
             vwap = (df_hourly['High'].iloc[-1] + df_hourly['Low'].iloc[-1] + df_hourly['Close'].iloc[-1]) / 3
             
-            # 3. Güvenli İskonto (%0.5 aşağısı)
-            discount_price = current_price * 0.995
+            # Dinamik Giriş Hedefi (VWAP - Yarım Sapma)
+            target_raw = vwap - (std_dev * 0.5)
             
-            # KARAR: Desteklerin en yükseğini al (Trend kaçmasın diye)
-            target = max(ema10, vwap, discount_price)
-            
-            # Eğer hesaplanan hedef şu anki fiyatın çok üzerindeyse (pump varsa),
-            # o anki fiyattan %0.3 aşağı yaz.
-            if target > current_price:
-                target = current_price * 0.997
+            if target_raw >= current_price:
+                target_raw = current_price * 0.997
                 
-            return self.bist_yuvarlama(target)
+            return self.bist_yuvarlama(target_raw)
             
-        except: 
-            return self.bist_yuvarlama(current_price * 0.995)
+        except: return self.bist_yuvarlama(current_price * 0.995)
 
-    def calculate_atr_stop(self, df_daily, entry_price):
+    def calculate_atr_metrics(self, df_daily, entry_price):
+        """
+        ÇIKIŞ MOTORU (Satış Hedefleri)
+        ATR (Ortalama Gerçek Aralık) kullanarak hedefleri belirler.
+        """
         try:
             df_daily.columns = [c.capitalize() for c in df_daily.columns]
             high_low = df_daily['High'] - df_daily['Low']
@@ -196,9 +195,23 @@ class SmartEntryEngine:
             low_close = (df_daily['Low'] - df_daily['Close'].shift()).abs()
             ranges = pd.concat([high_low, high_close, low_close], axis=1)
             atr = np.max(ranges, axis=1).rolling(14).mean().iloc[-1]
-            raw_stop = entry_price - (atr * 1.5)
-            return self.bist_yuvarlama(raw_stop)
-        except: return self.bist_yuvarlama(entry_price * 0.97)
+            
+            # --- PROFESYONEL HEDEFLEME ---
+            raw_stop = entry_price - (atr * 1.5) # Stop: 1.5 birim aşağı
+            raw_tp1 = entry_price + (atr * 3.0)  # Hedef 1: 3 birim yukarı (Güvenli)
+            raw_tp2 = entry_price + (atr * 5.0)  # Hedef 2: 5 birim yukarı (Ralli)
+            
+            return {
+                "stop": self.bist_yuvarlama(raw_stop),
+                "tp1": self.bist_yuvarlama(raw_tp1),
+                "tp2": self.bist_yuvarlama(raw_tp2)
+            }
+        except: 
+            return {
+                "stop": self.bist_yuvarlama(entry_price * 0.97),
+                "tp1": self.bist_yuvarlama(entry_price * 1.05),
+                "tp2": self.bist_yuvarlama(entry_price * 1.08)
+            }
 
 def wavetrend_check(df):
     try:
@@ -243,11 +256,11 @@ def hafiza_islem(mode, data=None):
         except: pass
 
 # ==========================================
-# 4. ANA DÖNGÜ (STRATEJİ MERKEZİ)
+# 4. ANA DÖNGÜ
 # ==========================================
 
-st.set_page_config(page_title="Sniper V7 - SPAM KORUMASI", page_icon="🦁", layout="wide")
-st.title("🦁 SNIPER AI - GÜNLÜK TREND + SPAM KORUMASI")
+st.set_page_config(page_title="Sniper V10 - FULL PRO", page_icon="🦁", layout="wide")
+st.title("🦁 SNIPER AI - GİRİŞ + ÇIKIŞ FULL OTOMATİK")
 
 tv_obj, source_mode = init_tv_failover()
 smart_ai = SmartEntryEngine()
@@ -256,7 +269,7 @@ hafiza = hafiza_islem("load")
 if source_mode == "FAIL":
     st.error("🚨 SİSTEM ÇÖKTÜ!")
 else:
-    st.success(f"✅ SİSTEM AKTİF | MOD: {source_mode} | STRATEJİ: Smart Entry + Spam Shield")
+    st.success(f"✅ SİSTEM AKTİF | MOD: {source_mode} | STRATEJİ: Volatilite Bazlı Al/Sat")
     
     status = st.empty()
     bar = st.progress(0)
@@ -270,7 +283,6 @@ else:
                 bar.progress((i+1)/len(ACTIVE_WHITELIST))
                 if source_mode == "TV": time.sleep(random.uniform(0.5, 1.2))
                 
-                # ADIM 1: GÜNLÜK VERİ
                 df_daily = get_data(hisse, tv_obj, source_mode, "DAILY")
                 if df_daily is None or df_daily.empty: continue
                 
@@ -278,11 +290,8 @@ else:
                 fiyat = df_daily['close'].iloc[-1] if 'close' in df_daily.columns else df_daily['Close'].iloc[-1]
                 su_an = time.time()
 
-                # --- SENARYO 1: AL ---
                 if buy_daily:
-                    # >>> SPAM KALKANI (İŞTE BU SATIR EKLENDİ) <<<
-                    if hisse in hafiza:
-                        continue 
+                    if hisse in hafiza: continue 
                     
                     df_hourly = get_data(hisse, tv_obj, source_mode, "HOURLY")
                     puan = 50 + (wt1 - wt2)*5
@@ -290,26 +299,33 @@ else:
                     puan = min(100, int(puan))
                     
                     if puan >= 60:
+                        # 1. GİRİŞİ HESAPLA (V9 Mantığı - Aynı)
                         if df_hourly is not None and not df_hourly.empty:
                             giris = smart_ai.calculate_smart_entry(df_hourly, fiyat)
                         else:
                             giris = smart_ai.bist_yuvarlama(fiyat * 0.995)
                         
-                        stop_loss = smart_ai.calculate_atr_stop(df_daily, giris)
+                        # 2. ÇIKIŞI HESAPLA (Yeni Profesyonel Modül)
+                        metrics = smart_ai.calculate_atr_metrics(df_daily, giris)
+                        
+                        kazanc1 = round(((metrics["tp1"] - giris)/giris)*100, 2)
+                        kazanc2 = round(((metrics["tp2"] - giris)/giris)*100, 2)
 
                         msg = f"🟢 <b>GÜNLÜK TREND YAKALANDI! (#{hisse})</b>\n\n"
                         msg += f"🦁 <b>Hisse:</b> #{hisse}\n"
                         msg += f"⭐ <b>Kalite:</b> {puan}/100\n"
-                        msg += f"💰 <b>Anlık Fiyat:</b> {fiyat} TL\n"
-                        msg += f"🎯 <b>Akıllı Giriş (VWAP):</b> {giris} TL\n"
-                        msg += f"🛡️ <b>Stop Loss:</b> {stop_loss} TL\n\n"
+                        msg += f"💰 <b>Akıllı Giriş:</b> {giris} TL\n"
+                        msg += f"---------------------------------\n"
+                        msg += f"🎯 <b>Hedef 1 (Kar Al):</b> {metrics['tp1']} TL (+%{kazanc1})\n"
+                        msg += f"🚀 <b>Hedef 2 (Ana Hedef):</b> {metrics['tp2']} TL (+%{kazanc2})\n"
+                        msg += f"---------------------------------\n"
+                        msg += f"🛡️ <b>Zarar Kes (Stop):</b> {metrics['stop']} TL\n"
                         
                         send_telegram(msg)
                         sinyal_sayisi += 1
                         hafiza[hisse] = su_an
                         hafiza_islem("save", hafiza)
 
-                # --- SENARYO 2: SAT ---
                 elif sell_daily:
                     if hisse in hafiza:
                         if (su_an - hafiza[hisse]) <= 259200:

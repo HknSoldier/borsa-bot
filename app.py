@@ -90,7 +90,6 @@ def init_tv_failover():
     for index, sess_id in enumerate(SESSION_IDS):
         try:
             temp_tv = TvDatafeed()
-            # Session Enjeksiyonu
             s_obj = None
             for attr in dir(temp_tv):
                 try:
@@ -122,14 +121,10 @@ def init_tv_failover():
     return None, "FAIL"
 
 def get_data(symbol, tv_object, source_type, timeframe):
-    """
-    timeframe: 'DAILY' veya 'HOURLY'
-    """
     try:
         if source_type == "TV":
             interval = Interval.in_daily if timeframe == 'DAILY' else Interval.in_1_hour
             return tv_object.get_hist(symbol=symbol, exchange='BIST', interval=interval, n_bars=100)
-        
         elif source_type == "YF":
             yf_sym = symbol + ".IS"
             p = "6mo" if timeframe == 'DAILY' else "1mo"
@@ -152,8 +147,30 @@ class MLEngine:
     def __init__(self):
         self.model = LinearRegression()
     
+    def bist_yuvarlama(self, fiyat):
+        """
+        BIST Fiyat Adımları Kuralı (Tick Size)
+        """
+        if fiyat < 20.00:
+            tick = 0.01
+        elif fiyat < 50.00:
+            tick = 0.02
+        elif fiyat < 100.00:
+            tick = 0.05
+        elif fiyat < 250.00:
+            tick = 0.10
+        elif fiyat < 500.00:
+            tick = 0.25
+        elif fiyat < 1000.00:
+            tick = 0.50
+        else:
+            tick = 1.00
+            
+        # En yakın tick'e yuvarla
+        return round(round(fiyat / tick) * tick, 2)
+
     def optimal_giris(self, df):
-        """Saatlik veriyi kullanarak hassas giriş hesaplar"""
+        """Saatlik veriyi kullanarak hassas ve BIST uyumlu giriş hesaplar"""
         try:
             df.columns = [c.capitalize() for c in df.columns] 
             df['Volatility'] = df['High'] - df['Low']
@@ -164,8 +181,13 @@ class MLEngine:
             self.model.fit(X, y)
             curr = [[df['Volatility'].iloc[-1], df['Body'].iloc[-1]]]
             pred = self.model.predict(curr)[0]
-            # Anlık fiyattan biraz daha aşağıda güvenli bir yer arar
-            return round(min(pred, df['Close'].iloc[-1] * 0.998), 2)
+            
+            # Ham AI Tahmini
+            raw_price = min(pred, df['Close'].iloc[-1] * 0.998)
+            
+            # BIST Kuralına Göre Düzelt (Burası Yeni!)
+            return self.bist_yuvarlama(raw_price)
+            
         except: return round(df['Close'].iloc[-1], 2)
 
     def calculate_atr(self, df, period=14):
@@ -175,7 +197,8 @@ class MLEngine:
             high_close = (df['High'] - df['Close'].shift()).abs()
             low_close = (df['Low'] - df['Close'].shift()).abs()
             ranges = pd.concat([high_low, high_close, low_close], axis=1)
-            return np.max(ranges, axis=1).rolling(period).mean().iloc[-1]
+            raw_stop = np.max(ranges, axis=1).rolling(period).mean().iloc[-1]
+            return raw_stop
         except: return df['Close'].iloc[-1] * 0.03
 
 def wavetrend_check(df):
@@ -193,10 +216,8 @@ def wavetrend_check(df):
         wt1_prev = wt1.iloc[-2]
         wt2_prev = wt2.iloc[-2]
         
-        # GÜNLÜKTE AL SİNYALİ (Trend Başlangıcı)
         buy = (wt1_prev < wt2_prev) and (wt1_now > wt2_now) and (wt1_prev < -40)
         sell = (wt1_prev > wt2_prev) and (wt1_now < wt2_now) and (wt1_prev > 40)
-        
         return buy, sell, wt1_now, wt2_now
     except: return False, False, 0, 0
 
@@ -226,8 +247,8 @@ def hafiza_islem(mode, data=None):
 # 4. ANA DÖNGÜ (STRATEJİ MERKEZİ)
 # ==========================================
 
-st.set_page_config(page_title="Sniper V4 - MultiTimeframe", page_icon="🦁", layout="wide")
-st.title("🦁 SNIPER AI - GÜNLÜK TREND + SAATLİK GİRİŞ")
+st.set_page_config(page_title="Sniper V5 - BIST PRO", page_icon="🦁", layout="wide")
+st.title("🦁 SNIPER AI - BIST UYUMLU PROFESYONEL SİSTEM")
 
 tv_obj, source_mode = init_tv_failover()
 ml = MLEngine()
@@ -236,7 +257,7 @@ hafiza = hafiza_islem("load")
 if source_mode == "FAIL":
     st.error("🚨 SİSTEM ÇÖKTÜ!")
 else:
-    st.success(f"✅ SİSTEM AKTİF | MOD: {source_mode} | STRATEJİ: Günlük Trend + Hassas Giriş")
+    st.success(f"✅ SİSTEM AKTİF | MOD: {source_mode} | STRATEJİ: Günlük Trend + BIST Uyumlu Giriş")
     
     status = st.empty()
     bar = st.progress(0)
@@ -246,60 +267,52 @@ else:
     if 9 <= simdi.hour <= 18:
         for i, hisse in enumerate(ACTIVE_WHITELIST):
             try:
-                status.text(f"🔍 {hisse} Analiz Ediliyor... (Günlük + Saatlik)")
+                status.text(f"🔍 {hisse} Analiz Ediliyor...")
                 bar.progress((i+1)/len(ACTIVE_WHITELIST))
-                
-                # Anti-Ban
                 if source_mode == "TV": time.sleep(random.uniform(0.5, 1.2))
                 
-                # ADIM 1: GÜNLÜK VERİ ÇEK (Ana Trend)
+                # ADIM 1: GÜNLÜK VERİ (Trend)
                 df_daily = get_data(hisse, tv_obj, source_mode, "DAILY")
                 if df_daily is None or df_daily.empty: continue
                 
-                # ADIM 2: TREND KONTROLÜ
                 buy_daily, sell_daily, wt1, wt2 = wavetrend_check(df_daily)
-                
                 fiyat = df_daily['close'].iloc[-1] if 'close' in df_daily.columns else df_daily['Close'].iloc[-1]
                 su_an = time.time()
 
-                # --- SENARYO 1: GÜNLÜKTE AL SİNYALİ VARSA ---
+                # --- SENARYO 1: AL ---
                 if buy_daily:
-                    # ADIM 3: SAATLİK VERİ ÇEK (Hassas Giriş İçin)
                     df_hourly = get_data(hisse, tv_obj, source_mode, "HOURLY")
                     
-                    # Puanlama (Günlük Veriyle)
                     puan = 50 + (wt1 - wt2)*5
                     if wt1 < -60: puan += 10
                     puan = min(100, int(puan))
                     
                     if puan >= 60:
-                        # ADIM 4: ML İLE HASSAS GİRİŞ (Saatlik Veriyle)
                         if df_hourly is not None and not df_hourly.empty:
-                            giris = ml.optimal_giris(df_hourly) # Saatlikten hesapla
+                            giris = ml.optimal_giris(df_hourly) # BIST Uyumlu Hesaplanacak
                         else:
-                            giris = fiyat # Saatlik yoksa anlık fiyat
+                            giris = ml.bist_yuvarlama(fiyat)
                         
-                        # Stop Loss (Günlük ATR ile - Sağlamcı)
                         atr = ml.calculate_atr(df_daily)
-                        stop_loss = giris - (atr * 1.5)
+                        raw_stop = giris - (atr * 1.5)
+                        stop_loss = ml.bist_yuvarlama(raw_stop) # Stop da kurallara uymalı
 
                         msg = f"🟢 <b>DEV TREND BAŞLIYOR! (#{hisse})</b>\n\n"
                         msg += f"🦁 <b>Hisse:</b> #{hisse}\n"
-                        msg += f"📅 <b>Trend:</b> GÜNLÜK (Güvenli)\n"
                         msg += f"⭐ <b>Kalite:</b> {puan}/100\n"
                         msg += f"💰 <b>Anlık Fiyat:</b> {fiyat} TL\n"
-                        msg += f"🎯 <b>Nokta Atışı Giriş:</b> {giris} TL\n"
-                        msg += f"🛡️ <b>Güvenli Stop:</b> {round(stop_loss, 2)} TL\n\n"
+                        msg += f"🎯 <b>BIST Uyumlu Giriş:</b> {giris} TL\n"
+                        msg += f"🛡️ <b>Stop Loss:</b> {stop_loss} TL\n\n"
                         
                         send_telegram(msg)
                         sinyal_sayisi += 1
                         hafiza[hisse] = su_an
                         hafiza_islem("save", hafiza)
 
-                # --- SENARYO 2: SAT SİNYALİ ---
+                # --- SENARYO 2: SAT ---
                 elif sell_daily:
                     if hisse in hafiza:
-                        if (su_an - hafiza[hisse]) <= 172800: # 48 Saat (Günlük olduğu için süre uzadı)
+                        if (su_an - hafiza[hisse]) <= 172800:
                             msg = f"🔴 <b>DİKKAT! TREND BOZULDU (#{hisse})</b>\nStop Ol / Kar Al."
                             send_telegram(msg)
                         del hafiza[hisse]
@@ -307,7 +320,7 @@ else:
 
             except: continue
         
-        status.success(f"Tur Tamamlandı. {sinyal_sayisi} yeni trend yakalandı.")
+        status.success(f"Tur Tamamlandı. {sinyal_sayisi} fırsat bulundu. Yeniden başlıyor...")
     else:
         st.warning("🌙 Piyasa Kapalı.")
 

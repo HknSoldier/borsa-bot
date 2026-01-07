@@ -5,33 +5,156 @@ import time
 import requests
 import json
 import os
+import random
+import yfinance as yf
 from datetime import datetime
 import pytz
 from tvDatafeed import TvDatafeed, Interval
 from sklearn.linear_model import LinearRegression
 
 # ==========================================
-# 1. AYARLAR & KİMLİK
+# 1. MÜHİMMATLAR VE AYARLAR
 # ==========================================
 
+# 1. TELEGRAM BİLGİLERİN (Eski kodundan aldım ama buraya kendi bilgilerini tekrar kontrol et)
 TELEGRAM_TOKEN = "7977796977:AAHNn1m3WbzfRTHOocfYTpQuhN6OWMRdwXg"
 TELEGRAM_GROUP_ID = "-1003588305277" 
 
-TV_USER = "hakanozalp1192"
-TV_PASS = "192013Eg.//+"
+# 2. ÇİFT SESSION ID (ANA VE YEDEK)
+SESSION_IDS = [
+    "v86ido9xj2o78ync4lz4q3ylpytwofne",  # 1. Anahtar
+    "8kmfkpq73eqmpnzfwv3vpbi28hp1zktv"   # 2. Anahtar
+]
 
-PERIYOT = Interval.in_1_hour 
+# 3. YENİ 511 HİSSELİK LİSTE (Word Dosyasından Temizlenmiş)
+ACTIVE_WHITELIST = [
+    'AVOD', 'A1CAP', 'A1YEN', 'ACSEL', 'ADEL', 'ADESE', 'AFYON', 'AHSGY', 'AKENR', 'AKSUE', 
+    'ALCAR', 'ALCTL', 'ALKIM', 'ALKA', 'ALKLC', 'AYCES', 'ALVES', 'ASUZU', 'ANGEN', 'ANELE', 
+    'ARENA', 'ARFYE', 'ARSAN', 'ARTMS', 'ARZUM', 'AVGYO', 'AVHOL', 'AYEN', 'AZTEK', 'BAGFS', 
+    'BAHKM', 'BAKAB', 'BNTAS', 'BANVT', 'BARMA', 'BEGYO', 'BAYRK', 'BEYAZ', 'BIGTK', 'BLCYT', 
+    'BRKVY', 'BRLSM', 'BIZIM', 'BLUME', 'BMSTL', 'BMSCH', 'BORSK', 'BOSSA', 'BULGS', 'BURCE', 
+    'BVSAN', 'BIGCH', 'CRFSA', 'CEOEM', 'CONSE', 'CGCAM', 'CATES', 'CELHA', 'CEMAS', 'CEMTS', 
+    'CMBTN', 'CUSAN', 'DAGI', 'DARDL', 'DGATE', 'DCTTR', 'DMSAS', 'DENGE', 'DZGYO', 'DERIM', 
+    'DERHL', 'DESA', 'DESPC', 'DNISI', 'DITAS', 'DMRGD', 'DOCO', 'DOFER', 'DGNMO', 'DOKTA', 
+    'DURDO', 'DURKN', 'DUNYH', 'DYOBY', 'ECOGR', 'EDATA', 'EDIP', 'EPLAS', 'EGPRO', 'EGSER', 
+    'EGEGY', 'EKOS', 'EKSUN', 'ELITE', 'EMKEL', 'ENSRI', 'ERBOS', 'KIMMR', 'ESCOM', 'ETILR', 
+    'EYGYO', 'FADE', 'FMIZP', 'FONET', 'FORMT', 'FORTE', 'FRIGO', 'GARFA', 'GEDIK', 'GEDZA', 
+    'GEREL', 'GZNMI', 'GMTAS', 'GOODY', 'GSDDE', 'GSDHO', 'GLRYH', 'GUNDG', 'HATEK', 'HDFGS', 
+    'HEDEF', 'HKTM', 'HOROZ', 'HUNER', 'HURGZ', 'ICBCT', 'ICUGS', 'INGRM', 'IHLGM', 'IHGZT', 
+    'IHAAS', 'IHYAY', 'IMASM', 'INFO', 'INTEM', 'ISSEN', 'ISGSY', 'ISYAT', 'IZMDC', 'IZFAS', 
+    'JANTS', 'KFEIN', 'KAPLM', 'KRDMB', 'KRTEK', 'KARTN', 'KRVGD', 'KLMSN', 'KLSYN', 'KNFRT', 
+    'KONKA', 'KGYO', 'KRPLS', 'KRGYO', 'KRSTL', 'KRONT', 'KBORU', 'KZGYO', 'KUTPO', 'KTSKR', 
+    'LIDFA', 'LKMNH', 'LRSHO', 'LUKSK', 'LYDYE', 'MACKO', 'MAKIM', 'MAKTK', 'MANAS', 'MARKA', 
+    'MARMR', 'MAALT', 'MRSHL', 'MRGYO', 'MARTI', 'MTRKS', 'MEDTR', 'MEKAG', 'MNDRS', 'MERCN', 
+    'MERIT', 'MERKO', 'METRO', 'MHRGY', 'MSGYO', 'MOGAN', 'MNDTR', 'EGEPO', 'NTGAZ', 'NETAS', 
+    'NIBAS', 'NUGYO', 'OBASE', 'OFSYM', 'ONCSM', 'ONRYT', 'OSMEN', 'OSTIM', 'OTTO', 'OYYAT', 
+    'OZGYO', 'OZSUB', 'OZYSR', 'PAMEL', 'PNLSN', 'PAGYO', 'PRDGS', 'PRKME', 'PCILT', 'PEKGY', 
+    'PENGD', 'PENTA', 'PKENT', 'PETUN', 'PINSU', 'PNSUT', 'PKART', 'RAYSG', 'RTALB', 'RUBNS', 
+    'RUZYE', 'SAFKR', 'SNICA', 'SANFM', 'SANKO', 'SAYAS', 'SEGMN', 'SELVA', 'SERNT', 'SMART', 
+    'SOKE', 'SKTAS', 'SMRVA', 'SEGYO', 'SKYMD', 'TARKM', 'TATGD', 'TEKTU', 'TKNSA', 'TMPOL', 
+    'TERA', 'TEHOL', 'TGSAS', 'TLMAN', 'TSGYO', 'TUCLK', 'MARBL', 'TRILC', 'TURGG', 'PRKAB', 
+    'TBORG', 'UFUK', 'ULUFA', 'ULUSE', 'ULUUN', 'UNLU', 'VKGYO', 'VBTYZ', 'VRGYO', 'VERUS', 
+    'VERTU', 'VKING', 'VSNMD', 'YATAS', 'YAYLA', 'YYAPI', 'YESIL', 'YIGIT', 'YKSLN', 'YUNSA', 
+    'ZEDUR', 'BINHO', 'ADGYO', 'AGHOL', 'AGESA', 'AGROT', 'AHGAZ', 'AKBNK', 'AKCNS', 'AKFGY', 
+    'AKFIS', 'AKFYE', 'AKSGY', 'AKSA', 'AKSEN', 'AKGRT', 'ALGYO', 'ALARK', 'ALBRK', 'ALFAS', 
+    'ALTNY', 'ANSGR', 'AEFES', 'ANHYT', 'ARCLK', 'ARDYZ', 'ARMGD', 'ASGYO', 'ASELS', 'ASTOR', 
+    'ATAKP', 'ATATP', 'AVPGY', 'AYDEM', 'AYGAZ', 'BALSU', 'BASGZ', 'BTCIM', 'BSOKE', 'BERA', 
+    'BESLR', 'BJKAS', 'BIENY', 'BIMAS', 'BINBN', 'BIOEN', 'BIGEN', 'BOBET', 'BORLS', 'BRSAN', 
+    'BRYAT', 'BFREN', 'BRISA', 'BUCIM', 'CEMZY', 'CCOLA', 'CVKMD', 'CWENE', 'CANTE', 'CLEBI', 
+    'CIMSA', 'DAPGM', 'DSTKF', 'DEVA', 'DOFRB', 'DOHOL', 'ARASE', 'DOAS', 'EBEBK', 'ECZYT', 
+    'EFOR', 'EGEEN', 'EGGUB', 'ECILC', 'EKGYO', 'ENDAE', 'ENJSA', 'ENERY', 'ENKAI', 'ERCB', 
+    'EREGL', 'ESCAR', 'ESEN', 'TEZOL', 'EUREN', 'EUPWR', 'FENER', 'FROTO', 'FZLGY', 'GSRAY', 
+    'GWIND', 'GLCVY', 'GENIL', 'GENTS', 'GIPTA', 'GESAN', 'GLYHO', 'GOKNR', 'GOLTS', 'GOZDE', 
+    'GRTHO', 'GUBRF', 'GLRMK', 'GRSEL', 'SAHOL', 'HLGYO', 'HRKET', 'HATSN', 'HEKTS', 'HTTBT', 
+    'ENTRA', 'INVEO', 'INVES', 'IEYHO', 'ISKPL', 'IHLAS', 'INDES', 'ISDMR', 'ISFIN', 'ISGYO', 
+    'ISMEN', 'IZENR', 'KLKIM', 'KLSER', 'KLYPV', 'KRDMA', 'KRDMD', 'KAREL', 'KARSN', 'KTLEV', 
+    'KATMR', 'KAYSE', 'TCKRC', 'KZBGY', 'KLGYO', 'KLRHO', 'KMPUR', 'KCAER', 'KCHOL', 'KOCMT', 
+    'KONTR', 'KONYA', 'KORDS', 'KOTON', 'KOPOL', 'KUYAS', 'LIDER', 'LILAK', 'LMKDC', 'LINK', 
+    'LOGO', 'LYDHO', 'MAGEN', 'MAVI', 'MEGMT', 'MIATK', 'MGROS', 'MPARK', 'MOBTL', 'MOPAS', 
+    'NATEN', 'NTHOL', 'NUHCM', 'OBAMS', 'ODAS', 'ODINE', 'ORGE', 'OTKAR', 'OYAKC', 'OZKGY', 
+    'OZATD', 'PAPIL', 'PARSN', 'PASEU', 'PSGYO', 'PAHOL', 'PATEK', 'PGSUS', 'PETKM', 'PLTUR', 
+    'POLHO', 'POLTK', 'QUAGR', 'RALYH', 'REEDR', 'RYGYO', 'RYSAS', 'RGYAS', 'SARKY', 'SASA', 
+    'SDTTR', 'SELEC', 'SRVGY', 'SNGYO', 'SMRTG', 'SUNTK', 'SURGY', 'SUWEN', 'SKBNK', 'SOKM', 
+    'TABGD', 'TNZTP', 'TATEN', 'TAVHL', 'TKFEN', 'TOASO', 'TRGYO', 'TSPOR', 'TRMET', 'TRENJ', 
+    'TUKAS', 'TRCAS', 'TUREX', 'TCELL', 'TMSN', 'TUPRS', 'TRALT', 'THYAO', 'GARAN', 'HALKB', 
+    'ISCTR', 'TSKB', 'TURSG', 'SISE', 'VAKBN', 'TTKOM', 'TTRAK', 'USAK', 'ULKER', 'VAKFA', 
+    'VAKFN', 'VAKKO', 'VESBE', 'VESTL', 'YKBNK', 'YAPRK', 'YYLGD', 'YGGYO', 'YEOTK', 'ZERGY', 
+    'ZRGYO', 'ZOREN'
+]
 
-# LİSTE (Senin 327 Hissen)
-FULL_UNIVERSE = ['BMSTL','EMKEL','FORMT','GARAN','HKTM','MAGEN','MNDTR','ODINE','RYGYO','SAFKR','SELGD','SKTAS','SNKRN','TCELL','TGSAS','TRGYO','ULUUN','SAMAT','YESIL','KFEIN','TAVHL','TEZOL','SRVGY','HURGZ','ANELE','KLSYN','ICBCT','CRDFA','KIMMR','MSGYO','AVGYO','SOKM','FZLGY','BRKVY','LOGO','TDGYO','IEYHO','KRONT','PATEK','VERUS','ETYAT','BASGZ','ESEN','IHAAS','RYSAS','VANGD','MACKO','PENTA','INTEM','GEDZA','GLCVY','BIENY','NUGYO','SEGMN','TLMAN','USAK','ONCSM','PRKME','ALBRK','ESCOM','ICUGS','KOPOL','PRDGS','DMRGD','HATEK','DGNMO','SEGYO','EUYO','OBASE','PSGYO','BNTAS','CVKMD','FORTE','SUNTK','ULUFA','BLCYT','DURDO','GEREL','PNLSN','GRSEL','VAKFN','KLMSN','MOGAN','KORDS','ANSGR','SMRTG','TKFEN','IZMDC','AKSA','FROTO','MNDRS','METRO','YEOTK','CEMTS','CRFSA','DARDL','ARASE','BIOEN','PNSUT','ALKIM','DGATE','YKSLN','OSTIM','MAKIM','ISGSY','CEMAS','DERHL','EKGYO','ISGYO','SKBNK','HUBVC','AKSUE','GENTS','EDATA','BIGCH','TOASO','CLEBI','CIMSA','PSDTC','EMNIS','SAHOL','VBTYZ','ALGYO','BORLS','FONET','KONKA','ASGYO','ENKAI','GWIND','KRDMD','BAKAB','OZKGY','FRIGO','POLHO','NTGAZ','TEKTU','ASTOR','VKGYO','KOZAL','KARTN','TMPOL','TKNSA','DAPGM','PINSU','MTRYO','KRDMB','MMCAS','ESCAR','AFYON','BORSK','KZGYO','BEYAZ','LILAK','KRVGD','AGROT','BRLSM','SMART','REEDR','JANTS','VESTL','MIATK','MARKA','CANTE','INGRM','BINHO','BJKAS','BANVT','DIRIT','DOAS','CWENE','VAKKO','NETAS','YONGA','SANKO','EGEPO','ISSEN','PAPIL','PAMEL','KRTEK','IHLGM','FADE','DNISI','EGSER','KNFRT','MEKAG','BRISA','INDES','MERCN','KARYE','IHYAY','MERKO','SARKY','GESAN','NUHCM','BOSSA','ECZYT','ALKA','KERVT','KAPLM','TSPOR','OYAYO','TURGG','ZEDUR','OZGYO','AKENR','IMASM','KATMR','KARSN','KTSKR','SELEC','ARZUM','CELHA','HTTBT','GOLTS','TUKAS','PRZMA','GSDDE','PKART','POLTK','OYLUM','TURSG','CEOEM','EGGUB','ELITE','MEPET','GARFA','SONME','COSMO','KRPLS','GRNYO','EDIP','PGSUS','SDTTR','BEGYO','BVSAN','KLRHO','LUKSK','TMSN','AKGRT','BERA','KLGYO','TRILC','KUTPO','KUYAS','OZSUB','OFSYM','ARTMS','ATLAS','TUCLK','FMIZP','SASA','BMSCH','HATSN','HEKTS','KAYSE','GEDIK','SUWEN','ATEKS','BARMA','SANEL','HLGYO','MAALT','ARCLK','ASUZU','SISE','BRKSN','AEFES','PLTUR','MANAS','BRSAN','AKCNS','YAYLA','AKMGY','BFREN','SNICA','TSGYO','DOHOL','DOKTA','MARTI','EUKYO','GLBMD','ERSU','DCTTR','NATEN','KRGYO','GSRAY','BIMAS','ISFIN','CATES','MZHLD','PENGD','RODRG','CONSE','LMKDC','DERIM','MEDTR','TATGD','ETILR','PRKAB','RNPOL','BAGFS','KRSTL','YYLGD','ERCB','ENJSA','MERIT','BIZIM','OTKAR','ISDMR','ONRYT','NIBAS','PKENT','QUAGR','THYAO','OSMEN','DITAS','MAKTK','DOGUB','RAYSG','ARSAN','DAGI','BURCE','KERVN','HUNER','KONTR','DEVA']
-BLACKLIST = ['AHGAZ','TTRAK','AKYHO','MEGAP','TBORG','CMENT','OZRDN','SNPAM','OYAKC','SANFM','ALARK','AKFGY','BALAT','AKSEN']
-ACTIVE_WHITELIST = [h for h in FULL_UNIVERSE if h not in BLACKLIST]
-
-# Dosya Adı (Hafıza)
+# Hafıza Dosyası
 HAFIZA_DOSYASI = "sinyal_hafizasi.json"
 
 # ==========================================
-# 2. YARDIMCI FONKSİYONLAR (HAFIZA & ANALİZ)
+# 2. BAĞLANTI & VERİ MOTORU (YENİ SİSTEM)
+# ==========================================
+
+def init_tv_failover():
+    """ÇİFT MOTOR + YFINANCE DESTEKLİ BAĞLANTI"""
+    tv = None
+    source_mode = "YOK"
+    
+    # 1. VIP Anahtarları Dene
+    for index, sess_id in enumerate(SESSION_IDS):
+        try:
+            temp_tv = TvDatafeed()
+            session_obj = None
+            for attr in dir(temp_tv):
+                try:
+                    val = getattr(temp_tv, attr)
+                    if isinstance(val, requests.Session):
+                        session_obj = val
+                        break
+                except: continue
+            
+            if session_obj:
+                session_obj.cookies.update({'sessionid': sess_id})
+                session_obj.headers.update({'User-Agent': 'Mozilla/5.0'})
+            else:
+                temp_tv.session = requests.Session()
+                temp_tv.session.cookies.update({'sessionid': sess_id})
+
+            test = temp_tv.get_hist('THYAO', 'BIST', Interval.in_daily, n_bars=2)
+            if test is not None and not test.empty:
+                return temp_tv, "TV"
+        except: continue
+    
+    # 2. Misafir Modu Dene
+    try:
+        temp_tv = TvDatafeed()
+        test = temp_tv.get_hist('THYAO', 'BIST', Interval.in_daily, n_bars=2)
+        if test is not None and not test.empty:
+            return temp_tv, "TV"
+    except: pass
+
+    # 3. YFinance (C Planı)
+    try:
+        test = yf.download("THYAO.IS", period="2d", progress=False)
+        if not test.empty:
+            return None, "YF"
+    except: pass
+
+    return None, "FAIL"
+
+def get_data(symbol, tv_object, source_type):
+    """VERİ ÇEKME MOTORU (TV ve YF UYUMLU)"""
+    try:
+        if source_type == "TV":
+            return tv_object.get_hist(symbol=symbol, exchange='BIST', interval=Interval.in_1_hour, n_bars=100)
+        elif source_type == "YF":
+            yf_sym = symbol + ".IS"
+            df = yf.download(yf_sym, period="1mo", interval="1h", progress=False)
+            if not df.empty:
+                df = df.rename(columns={"Open":"open","High":"high","Low":"low","Close":"close","Volume":"volume"})
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                    df.columns = [c.lower() for c in df.columns]
+                return df
+    except: pass
+    return None
+
+# ==========================================
+# 3. ANALİZ MOTORU & HAFIZA (ESKİ SİSTEM)
 # ==========================================
 
 def tr_saat():
@@ -39,19 +162,15 @@ def tr_saat():
     return datetime.now(tz)
 
 def hafiza_yukle():
-    """Geçmiş Alım Sinyallerini Yükler"""
     if os.path.exists(HAFIZA_DOSYASI):
         try:
-            with open(HAFIZA_DOSYASI, 'r') as f:
-                return json.load(f)
+            with open(HAFIZA_DOSYASI, 'r') as f: return json.load(f)
         except: return {}
     return {}
 
 def hafiza_kaydet(data):
-    """Yeni Sinyali Kaydeder"""
     try:
-        with open(HAFIZA_DOSYASI, 'w') as f:
-            json.dump(data, f)
+        with open(HAFIZA_DOSYASI, 'w') as f: json.dump(data, f)
     except: pass
 
 def send_telegram(message):
@@ -70,6 +189,8 @@ class MLEngine:
     
     def optimal_giris(self, df):
         try:
+            # Sütun isimlerini düzelt (Büyük/Küçük harf uyumu)
+            df.columns = [c.capitalize() for c in df.columns] 
             df['Volatility'] = df['High'] - df['Low']
             df['Body'] = abs(df['Close'] - df['Open'])
             data = df.tail(50).copy()
@@ -79,10 +200,11 @@ class MLEngine:
             curr = [[df['Volatility'].iloc[-1], df['Body'].iloc[-1]]]
             pred = self.model.predict(curr)[0]
             return round(min(pred, df['Close'].iloc[-1] * 0.997), 2)
-        except: return round(df['Low'].iloc[-1] * 1.003, 2)
+        except: return round(df['Close'].iloc[-1], 2)
 
     def calculate_atr(self, df, period=14):
         try:
+            df.columns = [c.capitalize() for c in df.columns]
             high_low = df['High'] - df['Low']
             high_close = (df['High'] - df['Close'].shift()).abs()
             low_close = (df['Low'] - df['Close'].shift()).abs()
@@ -92,6 +214,7 @@ class MLEngine:
 
 def wavetrend_check(df):
     try:
+        df.columns = [c.capitalize() for c in df.columns]
         hlc3 = (df['High'] + df['Low'] + df['Close']) / 3
         esa = hlc3.ewm(span=10, adjust=False).mean()
         d = (hlc3 - esa).abs().ewm(span=10, adjust=False).mean()
@@ -99,119 +222,107 @@ def wavetrend_check(df):
         wt1 = ci.ewm(span=21, adjust=False).mean()
         wt2 = wt1.rolling(window=4).mean()
         
-        # AL SİNYALİ: Dipte Kesişim (-40 Altı)
-        buy_signal = (wt1_prev < wt2_prev) and (wt1_now > wt2_now) and (wt1_prev < -40)
+        wt1_now = wt1.iloc[-1]
+        wt2_now = wt2.iloc[-1]
+        wt1_prev = wt1.iloc[-2]
+        wt2_prev = wt2.iloc[-2]
         
-        # SAT SİNYALİ: Tepede Kesişim (+40 Üstü)
-        sell_signal = (wt1_prev > wt2_prev) and (wt1_now < wt2_now) and (wt1_prev > 40)
+        buy = (wt1_prev < wt2_prev) and (wt1_now > wt2_now) and (wt1_prev < -40)
+        sell = (wt1_prev > wt2_prev) and (wt1_now < wt2_now) and (wt1_prev > 40)
         
-        return buy_signal, sell_signal, wt1_now, wt2_now
+        return buy, sell, wt1_now, wt2_now
     except: return False, False, 0, 0
 
-def get_tv():
-    try: return TvDatafeed(TV_USER, TV_PASS)
-    except: return TvDatafeed()
-
-def market_regime(tv):
-    try:
-        xu100 = tv.get_hist(symbol='XU100', exchange='BIST', interval=Interval.in_daily, n_bars=200)
-        if xu100 is not None:
-            sma200 = xu100['close'].mean()
-            guncel = xu100['close'].iloc[-1]
-            if guncel < sma200: return "DEFANSIF"
-            else: return "NORMAL"
-    except: pass
-    return "NORMAL"
-
 # ==========================================
-# 3. ANA DÖNGÜ (STREAMLIT)
+# 4. ANA DÖNGÜ (SAVAŞ KOMUTA MERKEZİ)
 # ==========================================
 
-st.set_page_config(page_title="Hedge Fund Panel", page_icon="🦁", layout="wide")
-st.title("🦁 Borsa Avcısı - Yönetim Paneli")
+st.set_page_config(page_title="Hedge Fund Panel V2", page_icon="🦁", layout="wide")
+st.title("🦁 SNIPER AI - HYBRID SİSTEM")
 
-tv = get_tv()
-ml = MLEngine()
-piyasa_modu = market_regime(tv)
-st.info(f"📊 Piyasa Modu: **{piyasa_modu}**")
+# BAĞLANTIYI KUR
+tv_obj, source_mode = init_tv_failover()
 
-# Hafızayı Yükle
-hafiza = hafiza_yukle() # {'GARAN': 1709235000, 'THYAO': 1709240000} şeklinde zaman damgası tutar
-
-status = st.empty()
-bar = st.progress(0)
-sinyal_sayisi = 0
-
-saat = tr_saat().hour
-if 9 <= saat <= 18:
-    for i, hisse in enumerate(ACTIVE_WHITELIST):
-        try:
-            status.text(f"🔍 {hisse}")
-            bar.progress((i+1)/len(ACTIVE_WHITELIST))
-            
-            df = tv.get_hist(symbol=hisse, exchange='BIST', interval=PERIYOT, n_bars=100)
-            if df is None: continue
-            
-            buy, sell, wt1, wt2 = wavetrend_check(df)
-            
-            df.rename(columns={'high':'High','low':'Low','close':'Close','open':'Open','volume':'Volume'}, inplace=True)
-            fiyat = df['Close'].iloc[-1]
-            su_an = time.time() # Şimdiki zaman (Saniye cinsinden)
-            
-            # --- SENARYO 1: AL SİNYALİ ---
-            if buy:
-                puan = 50 + (wt1 - wt2)*5
-                if df['Volume'].iloc[-1] > df['Volume'].iloc[-20:-1].mean(): puan += 15
-                if wt1 < -60: puan += 10
-                puan = min(100, int(puan))
+if source_mode == "FAIL":
+    st.error("🚨 SİSTEM ÇÖKTÜ! HİÇBİR KAYNAKTAN VERİ ALINAMIYOR.")
+else:
+    st.success(f"✅ BAĞLANTI AKTİF | MOD: {source_mode}")
+    
+    ml = MLEngine()
+    hafiza = hafiza_yukle()
+    
+    status = st.empty()
+    bar = st.progress(0)
+    sinyal_sayisi = 0
+    
+    simdi = tr_saat()
+    
+    # GECE MODU KONTROLÜ (09:00 - 18:30 arası çalış)
+    if 9 <= simdi.hour <= 18:
+        for i, hisse in enumerate(ACTIVE_WHITELIST):
+            try:
+                status.text(f"🔍 Taranıyor: {hisse} (Kaynak: {source_mode})")
+                bar.progress((i+1)/len(ACTIVE_WHITELIST))
                 
-                gonder = False
-                if piyasa_modu == "NORMAL" and puan >= 60: gonder = True
-                if piyasa_modu == "DEFANSIF" and puan >= 85: gonder = True
+                # Anti-Ban (Sadece TV modunda bekle)
+                if source_mode == "TV":
+                    time.sleep(random.uniform(0.5, 1.2))
                 
-                if gonder:
-                    giris = ml.optimal_giris(df)
-                    atr = ml.calculate_atr(df)
-                    stop_loss = giris - (atr * 1.5)
+                # VERİYİ ÇEK (Yeni Fonksiyon)
+                df = get_data(hisse, tv_obj, source_mode)
+                if df is None or df.empty: continue
+                
+                # ANALİZ (Eski Mantık)
+                buy, sell, wt1, wt2 = wavetrend_check(df)
+                fiyat = df['close'].iloc[-1] if 'close' in df.columns else df['Close'].iloc[-1]
+                su_an = time.time()
+                
+                # --- SENARYO 1: AL SİNYALİ ---
+                if buy:
+                    # Puanlama
+                    puan = 50 + (wt1 - wt2)*5
+                    # Hacim kontrolü (Sütun adı uyumluluğu için check)
+                    vol_col = 'Volume' if 'Volume' in df.columns else 'volume'
+                    if df[vol_col].iloc[-1] > df[vol_col].iloc[-20:-1].mean(): puan += 15
+                    if wt1 < -60: puan += 10
+                    puan = min(100, int(puan))
                     
-                    msg = f"🟢 <b>YENİ FIRSAT! (#{hisse})</b>\n\n"
-                    msg += f"🦁 <b>Hisse:</b> #{hisse}\n"
-                    msg += f"⭐ <b>Kalite:</b> {puan}/100\n"
-                    msg += f"💰 <b>Fiyat:</b> {fiyat} TL\n"
-                    msg += f"🧠 <b>AI Giriş:</b> {giris} TL\n"
-                    msg += f"🛑 <b>Stop:</b> {round(stop_loss, 2)} TL\n\n"
-                    send_telegram(msg)
-                    sinyal_sayisi += 1
-                    
-                    # HAFIZAYA KAYDET
-                    hafiza[hisse] = su_an
-                    hafiza_kaydet(hafiza)
-            
-            # --- SENARYO 2: SAT SİNYALİ (24 SAAT KURALI) ---
-            elif sell:
-                # KURAL: Bu hisse için son 24 saat içinde AL sinyali ürettik mi?
-                if hisse in hafiza:
-                    alim_zamani = hafiza[hisse]
-                    gecen_sure = su_an - alim_zamani
-                    
-                    if gecen_sure <= 86400: # Eğer 24 saat dolmadıysa UYARI AT
-                        msg = f"🔴 <b>ERKEN UYARI! (#{hisse})</b>\n\n"
+                    if puan >= 60: # Eşik Değer
+                        giris = ml.optimal_giris(df)
+                        atr = ml.calculate_atr(df)
+                        stop_loss = giris - (atr * 1.5)
+                        
+                        msg = f"🟢 <b>YENİ FIRSAT! (#{hisse})</b>\n\n"
                         msg += f"🦁 <b>Hisse:</b> #{hisse}\n"
-                        msg += f"📉 <b>Durum:</b> Trend 24 saat dolmadan bozuldu!\n"
-                        msg += f"💰 <b>Anlık Fiyat:</b> {fiyat} TL\n"
-                        msg += f"💡 <b>Tavsiye:</b> Stop Ol / Satış Yap.\n\n"
+                        msg += f"⭐ <b>Kalite:</b> {puan}/100\n"
+                        msg += f"💰 <b>Fiyat:</b> {fiyat} TL\n"
+                        msg += f"🧠 <b>AI Giriş:</b> {giris} TL\n"
+                        msg += f"🛑 <b>Stop:</b> {round(stop_loss, 2)} TL\n\n"
+                        
                         send_telegram(msg)
                         sinyal_sayisi += 1
                         
+                        hafiza[hisse] = su_an
+                        hafiza_kaydet(hafiza)
+                
+                # --- SENARYO 2: SAT SİNYALİ (24 SAAT KURALI) ---
+                elif sell:
+                    if hisse in hafiza:
+                        alim_zamani = hafiza[hisse]
+                        if (su_an - alim_zamani) <= 86400: # 24 saat kuralı
+                            msg = f"🔴 <b>ERKEN UYARI! (#{hisse})</b>\n\n"
+                            msg += f"🦁 <b>Hisse:</b> #{hisse}\n"
+                            msg += f"📉 <b>Durum:</b> Trend 24 saat dolmadan bozuldu!\n"
+                            msg += f"💡 <b>Tavsiye:</b> Stop Ol / Satış Yap.\n\n"
+                            send_telegram(msg)
+                            sinyal_sayisi += 1
+                        
                         del hafiza[hisse]
                         hafiza_kaydet(hafiza)
-                    else:
-                        # 24 saati geçmiş, listeden temizle.
-                        del hafiza[hisse]
-                        hafiza_kaydet(hafiza)
-
-        except: pass
-    
-    status.success(f"Tur Bitti. {sinyal_sayisi} işlem bildirildi.")
-else:
-    st.warning("🌙 Gece Modu.")
+                        
+            except Exception as e:
+                continue
+        
+        status.success(f"Tur Bitti. {sinyal_sayisi} işlem bildirildi.")
+    else:
+        st.warning("🌙 Gece Modu Aktif. Piyasa kapalıyken tarama yapılmaz.")

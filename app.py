@@ -20,8 +20,8 @@ TELEGRAM_TOKEN = "7977796977:AAHNn1m3WbzfRTHOocfYTpQuhN6OWMRdwXg"
 TELEGRAM_GROUP_ID = "-1003588305277" 
 
 SESSION_IDS = [
-    "v86ido9xj2o78ync4lz4q3ylpytwofne",
-    "8kmfkpq73eqmpnzfwv3vpbi28hp1zktv"
+    "irzh2jgfz18jp04f7apjsw2h3porjvui",
+    "nngleygxk8aeuy12heg6tyiu85qnmtaz"
 ]
 
 # 511 HİSSELİK LİSTE

@@ -140,66 +140,69 @@ def get_data(symbol, tv_object, source_type, timeframe):
     return None
 
 # ==========================================
-# 3. ZEKA (ML & ANALİZ)
+# 3. ZEKİ GİRİŞ MOTORU (SMART ENTRY)
 # ==========================================
 
-class MLEngine:
+class SmartEntryEngine:
     def __init__(self):
-        self.model = LinearRegression()
+        pass
     
     def bist_yuvarlama(self, fiyat):
-        """
-        BIST Fiyat Adımları Kuralı (Tick Size)
-        """
-        if fiyat < 20.00:
-            tick = 0.01
-        elif fiyat < 50.00:
-            tick = 0.02
-        elif fiyat < 100.00:
-            tick = 0.05
-        elif fiyat < 250.00:
-            tick = 0.10
-        elif fiyat < 500.00:
-            tick = 0.25
-        elif fiyat < 1000.00:
-            tick = 0.50
-        else:
-            tick = 1.00
-            
-        # En yakın tick'e yuvarla
+        """BIST Tick Size Kuralı"""
+        if fiyat < 20.00: tick = 0.01
+        elif fiyat < 50.00: tick = 0.02
+        elif fiyat < 100.00: tick = 0.05
+        elif fiyat < 250.00: tick = 0.10
+        elif fiyat < 500.00: tick = 0.25
+        elif fiyat < 1000.00: tick = 0.50
+        else: tick = 1.00
         return round(round(fiyat / tick) * tick, 2)
 
-    def optimal_giris(self, df):
-        """Saatlik veriyi kullanarak hassas ve BIST uyumlu giriş hesaplar"""
+    def calculate_smart_entry(self, df_hourly, current_price):
+        """
+        VWAP ve EMA Destekli Akıllı Giriş
+        Amacı: Fiyatı öldürmeden, destek seviyesinden alım yapmak.
+        """
         try:
-            df.columns = [c.capitalize() for c in df.columns] 
-            df['Volatility'] = df['High'] - df['Low']
-            df['Body'] = abs(df['Close'] - df['Open'])
-            data = df.tail(50).copy()
-            X = data[['Volatility', 'Body']].values[:-1]
-            y = data['Low'].values[1:]
-            self.model.fit(X, y)
-            curr = [[df['Volatility'].iloc[-1], df['Body'].iloc[-1]]]
-            pred = self.model.predict(curr)[0]
+            df_hourly.columns = [c.capitalize() for c in df_hourly.columns]
             
-            # Ham AI Tahmini
-            raw_price = min(pred, df['Close'].iloc[-1] * 0.998)
+            # 1. Saatlik EMA 10 (Hızlı Destek)
+            ema10 = df_hourly['Close'].ewm(span=10, adjust=False).mean().iloc[-1]
             
-            # BIST Kuralına Göre Düzelt (Burası Yeni!)
-            return self.bist_yuvarlama(raw_price)
+            # 2. Basit VWAP Yaklaşımı (Son Mum)
+            vwap = (df_hourly['High'].iloc[-1] + df_hourly['Low'].iloc[-1] + df_hourly['Close'].iloc[-1]) / 3
             
-        except: return round(df['Close'].iloc[-1], 2)
+            # 3. Güvenli İskonto (%0.5 aşağısı)
+            discount_price = current_price * 0.995
+            
+            # KARAR: Desteklerin en yükseğini al (Trend kaçmasın diye)
+            # Ama asla şu anki fiyatın üstünde olmasın.
+            target = max(ema10, vwap, discount_price)
+            
+            # Eğer hesaplanan hedef şu anki fiyatın çok üzerindeyse (pump varsa),
+            # o anki fiyattan %0.3 aşağı yaz.
+            if target > current_price:
+                target = current_price * 0.997
+                
+            return self.bist_yuvarlama(target)
+            
+        except: 
+            # Hata olursa %0.5 aşağıya yaz
+            return self.bist_yuvarlama(current_price * 0.995)
 
-    def calculate_atr(self, df, period=14):
+    def calculate_atr_stop(self, df_daily, entry_price):
         try:
-            df.columns = [c.capitalize() for c in df.columns]
-            high_low = df['High'] - df['Low']
-            high_close = (df['High'] - df['Close'].shift()).abs()
-            low_close = (df['Low'] - df['Close'].shift()).abs()
+            df_daily.columns = [c.capitalize() for c in df_daily.columns]
+            high_low = df_daily['High'] - df_daily['Low']
+            high_close = (df_daily['High'] - df_daily['Close'].shift()).abs()
+            low_close = (df_daily['Low'] - df_daily['Close'].shift()).abs()
             ranges = pd.concat([high_low, high_close, low_close], axis=1)
-            raw_stop = np.max(ranges, axis=1).rolling(period).mean().iloc[-1]
-            return raw_stop
-        except: return df['Close'].iloc[-1] * 0.03
+            atr = np.max(ranges, axis=1).rolling(14).mean().iloc[-1]
+            
+            # Giriş fiyatının 1.5 ATR altı
+            raw_stop = entry_price - (atr * 1.5)
+            return self.bist_yuvarlama(raw_stop)
+        except: return self.bist_yuvarlama(entry_price * 0.97)
 
 def wavetrend_check(df):
     try:
@@ -247,17 +250,17 @@ def hafiza_islem(mode, data=None):
 # 4. ANA DÖNGÜ (STRATEJİ MERKEZİ)
 # ==========================================
 
-st.set_page_config(page_title="Sniper V5 - BIST PRO", page_icon="🦁", layout="wide")
-st.title("🦁 SNIPER AI - BIST UYUMLU PROFESYONEL SİSTEM")
+st.set_page_config(page_title="Sniper V6 - Smart Entry", page_icon="🦁", layout="wide")
+st.title("🦁 SNIPER AI - AKILLI VWAP GİRİŞİ")
 
 tv_obj, source_mode = init_tv_failover()
-ml = MLEngine()
+smart_ai = SmartEntryEngine()
 hafiza = hafiza_islem("load")
 
 if source_mode == "FAIL":
     st.error("🚨 SİSTEM ÇÖKTÜ!")
 else:
-    st.success(f"✅ SİSTEM AKTİF | MOD: {source_mode} | STRATEJİ: Günlük Trend + BIST Uyumlu Giriş")
+    st.success(f"✅ SİSTEM AKTİF | MOD: {source_mode} | STRATEJİ: Günlük Trend + VWAP Giriş")
     
     status = st.empty()
     bar = st.progress(0)
@@ -271,7 +274,7 @@ else:
                 bar.progress((i+1)/len(ACTIVE_WHITELIST))
                 if source_mode == "TV": time.sleep(random.uniform(0.5, 1.2))
                 
-                # ADIM 1: GÜNLÜK VERİ (Trend)
+                # ADIM 1: GÜNLÜK VERİ (Trend Tespiti)
                 df_daily = get_data(hisse, tv_obj, source_mode, "DAILY")
                 if df_daily is None or df_daily.empty: continue
                 
@@ -281,6 +284,7 @@ else:
 
                 # --- SENARYO 1: AL ---
                 if buy_daily:
+                    # ADIM 2: SAATLİK VERİ (Giriş Yeri İçin)
                     df_hourly = get_data(hisse, tv_obj, source_mode, "HOURLY")
                     
                     puan = 50 + (wt1 - wt2)*5
@@ -288,20 +292,19 @@ else:
                     puan = min(100, int(puan))
                     
                     if puan >= 60:
+                        # YENİ AI HESAPLAMA (VWAP + EMA)
                         if df_hourly is not None and not df_hourly.empty:
-                            giris = ml.optimal_giris(df_hourly) # BIST Uyumlu Hesaplanacak
+                            giris = smart_ai.calculate_smart_entry(df_hourly, fiyat)
                         else:
-                            giris = ml.bist_yuvarlama(fiyat)
+                            giris = smart_ai.bist_yuvarlama(fiyat * 0.995)
                         
-                        atr = ml.calculate_atr(df_daily)
-                        raw_stop = giris - (atr * 1.5)
-                        stop_loss = ml.bist_yuvarlama(raw_stop) # Stop da kurallara uymalı
+                        stop_loss = smart_ai.calculate_atr_stop(df_daily, giris)
 
-                        msg = f"🟢 <b>DEV TREND BAŞLIYOR! (#{hisse})</b>\n\n"
+                        msg = f"🟢 <b>GÜNLÜK TREND YAKALANDI! (#{hisse})</b>\n\n"
                         msg += f"🦁 <b>Hisse:</b> #{hisse}\n"
                         msg += f"⭐ <b>Kalite:</b> {puan}/100\n"
                         msg += f"💰 <b>Anlık Fiyat:</b> {fiyat} TL\n"
-                        msg += f"🎯 <b>BIST Uyumlu Giriş:</b> {giris} TL\n"
+                        msg += f"🎯 <b>Akıllı Giriş (VWAP):</b> {giris} TL\n"
                         msg += f"🛡️ <b>Stop Loss:</b> {stop_loss} TL\n\n"
                         
                         send_telegram(msg)
@@ -312,7 +315,7 @@ else:
                 # --- SENARYO 2: SAT ---
                 elif sell_daily:
                     if hisse in hafiza:
-                        if (su_an - hafiza[hisse]) <= 172800:
+                        if (su_an - hafiza[hisse]) <= 259200: # 3 Gün (Günlük trend daha uzun sürer)
                             msg = f"🔴 <b>DİKKAT! TREND BOZULDU (#{hisse})</b>\nStop Ol / Kar Al."
                             send_telegram(msg)
                         del hafiza[hisse]
@@ -320,7 +323,7 @@ else:
 
             except: continue
         
-        status.success(f"Tur Tamamlandı. {sinyal_sayisi} fırsat bulundu. Yeniden başlıyor...")
+        status.success(f"Tur Tamamlandı. {sinyal_sayisi} işlem bulundu. Yeniden başlıyor...")
     else:
         st.warning("🌙 Piyasa Kapalı.")
 

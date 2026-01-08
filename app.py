@@ -9,7 +9,7 @@ from datetime import datetime
 from tvDatafeed import TvDatafeed, Interval
 
 # ==========================================
-# 1. AYARLAR VE GİZLİ ANAHTARLAR
+# 1. AYARLAR
 # ==========================================
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -71,39 +71,68 @@ ACTIVE_WHITELIST = [
 HAFIZA_DOSYASI = "sinyal_hafizasi.json"
 
 # ==========================================
-# 2. MOTORLAR (V10 MANTIĞI)
+# 2. MOTORLAR VE HIBRIT VERİ KAYNAĞI
 # ==========================================
 
-def init_tv():
-    # Session ID ile TradingView'a bağlan (Misafir Modu Engelleyici)
+def init_data_source():
+    """Önce TV'yi dener, olmazsa YFinance'a geçer"""
     try:
-        temp_tv = TvDatafeed()
+        tv = TvDatafeed()
         if SESSION_ID:
             s_obj = None
-            for attr in dir(temp_tv):
+            for attr in dir(tv):
                 try:
-                    if isinstance(getattr(temp_tv, attr), requests.Session):
-                        s_obj = getattr(temp_tv, attr)
+                    if isinstance(getattr(tv, attr), requests.Session):
+                        s_obj = getattr(tv, attr)
                         break
                 except: continue
             
             if s_obj:
                 s_obj.cookies.update({'sessionid': SESSION_ID})
                 s_obj.headers.update({'User-Agent': 'Mozilla/5.0'})
-                print("✅ TV: Session ID Enjekte Edildi.")
-            else:
-                print("⚠️ TV: Session objesi bulunamadı, misafir modu.")
-        return temp_tv
-    except:
-        return None
+        
+        # Test: THYAO verisi çekebiliyor mu?
+        check = tv.get_hist(symbol='THYAO', exchange='BIST', interval=Interval.in_daily, n_bars=1)
+        if check is not None and not check.empty:
+            return tv, "TV"
+    except: pass
+    
+    print("⚠️ UYARI: TradingView bağlanamadı! Yedek (YFinance) devreye giriyor.")
+    return None, "YF"
 
-def get_data(symbol, tv_object, interval_str):
+def get_data_hybrid(symbol, source_obj, source_type, interval_str):
     try:
-        if interval_str == 'DAILY':
-            return tv_object.get_hist(symbol=symbol, exchange='BIST', interval=Interval.in_daily, n_bars=100)
-        elif interval_str == 'HOURLY':
-            return tv_object.get_hist(symbol=symbol, exchange='BIST', interval=Interval.in_1_hour, n_bars=100)
-    except: return None
+        if source_type == "TV":
+            interval = Interval.in_daily if interval_str == 'DAILY' else Interval.in_1_hour
+            df = source_obj.get_hist(symbol=symbol, exchange='BIST', interval=interval, n_bars=100)
+            if df is not None:
+                # Kolonları standardize et (TV formatı)
+                df.columns = [c.capitalize() for c in df.columns]
+                return df
+
+        elif source_type == "YF":
+            # Yahoo Finance Yedek Modu
+            yf_sym = symbol + ".IS"
+            p = "6mo" if interval_str == 'DAILY' else "1mo"
+            i = "1d" if interval_str == 'DAILY' else "1h"
+            
+            df = yf.download(yf_sym, period=p, interval=i, progress=False)
+            if not df.empty:
+                # Yeni YFinance MultiIndex düzeltmesi
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                
+                # Kolon isimlerini TV formatına çevir (Open, High, Low, Close)
+                df = df.rename(columns={
+                    "Open": "Open", "High": "High", "Low": "Low", "Close": "Close", "Volume": "Volume"
+                })
+                # Sütunları garantiye al
+                df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
+                return df
+                
+    except Exception as e:
+        return None
+    return None
 
 def bist_yuvarlama(fiyat):
     if fiyat < 20.00: tick = 0.01
@@ -115,15 +144,13 @@ def bist_yuvarlama(fiyat):
 
 def calculate_metrics(df_daily, df_hourly, current_price):
     try:
-        # GİRİŞ: Hourly VWAP - StdDev (V10 Özel Giriş Taktiği)
-        df_hourly.columns = [c.capitalize() for c in df_hourly.columns]
+        # GİRİŞ: Hourly VWAP - StdDev
         std_dev = df_hourly['Close'].rolling(window=20).std().iloc[-1]
         vwap = (df_hourly['High'].iloc[-1] + df_hourly['Low'].iloc[-1] + df_hourly['Close'].iloc[-1]) / 3
         giris = bist_yuvarlama(vwap - (std_dev * 0.5))
         if giris >= current_price: giris = current_price * 0.997
 
         # STOP/HEDEF: Daily ATR
-        df_daily.columns = [c.capitalize() for c in df_daily.columns]
         high_low = df_daily['High'] - df_daily['Low']
         high_close = (df_daily['High'] - df_daily['Close'].shift()).abs()
         low_close = (df_daily['Low'] - df_daily['Close'].shift()).abs()
@@ -138,7 +165,6 @@ def calculate_metrics(df_daily, df_hourly, current_price):
 
 def wavetrend_check(df):
     try:
-        df.columns = [c.capitalize() for c in df.columns]
         hlc3 = (df['High'] + df['Low'] + df['Close']) / 3
         esa = hlc3.ewm(span=10, adjust=False).mean()
         d = (hlc3 - esa).abs().ewm(span=10, adjust=False).mean()
@@ -146,7 +172,6 @@ def wavetrend_check(df):
         wt1 = ci.ewm(span=21, adjust=False).mean()
         wt2 = wt1.rolling(window=4).mean()
         
-        # NET KESİŞİM KURALI (V10 ile aynı)
         buy = (wt1.iloc[-2] < wt2.iloc[-2]) and (wt1.iloc[-1] > wt2.iloc[-1]) and (wt1.iloc[-1] < -40)
         sell = (wt1.iloc[-2] > wt2.iloc[-2]) and (wt1.iloc[-1] < wt2.iloc[-1])
         return buy, sell, wt1.iloc[-1], wt2.iloc[-1]
@@ -172,46 +197,55 @@ def hafiza_kaydet(data):
     except: pass
 
 # ==========================================
-# 3. GHOST MODE (TEK SEFERLİK ÇALIŞMA)
+# 3. GHOST MODE (OTOMATİK ÇALIŞMA)
 # ==========================================
 
 if __name__ == "__main__":
-    print("🦁 SNIPER AI - GHOST MODE BAŞLATILIYOR...")
+    # BAŞLANGIÇ MESAJI (Bot Çalıştığını Haber Verir)
+    print("🦁 SNIPER AI - BAŞLATILIYOR...")
     
-    tv = init_tv()
+    # Veri Kaynağı Seçimi (TV veya YF)
+    source_obj, source_type = init_data_source()
+    
+    if source_type == "YF":
+        send_telegram("⚠️ <b>SİSTEM UYARISI:</b> TradingView bağlantısı kurulamadı. Yedek sistem (YFinance) ile tarama yapılıyor.")
+    else:
+        # İstersen her 15 dakikada bir "Ben çalışıyorum" demesin diye burayı kapalı tutabilirsin.
+        # Sadece loglara yazar.
+        print("✅ TradingView Bağlantısı Başarılı.")
+
     hafiza = hafiza_yukle()
     simdi = time.time()
     
-    if tv is None:
-        print("❌ HATA: Veri kaynağına bağlanılamadı.")
-        exit()
+    scan_count = 0
+    signal_count = 0
 
     for hisse in ACTIVE_WHITELIST:
         try:
-            # GÜNLÜK VERİ ÇEK (Sinyal İçin)
-            df_daily = get_data(hisse, tv, 'DAILY')
+            # GÜNLÜK VERİ ÇEK
+            df_daily = get_data_hybrid(hisse, source_obj, source_type, 'DAILY')
             if df_daily is None or df_daily.empty: continue
+            
+            scan_count += 1
 
-            # ANALİZ YAP
+            # ANALİZ
             buy, sell, wt1, wt2 = wavetrend_check(df_daily)
-            fiyat = df_daily['close'].iloc[-1]
+            fiyat = df_daily['Close'].iloc[-1]
 
             # --- AL SİNYALİ ---
             if buy:
-                if hisse in hafiza: continue # Zaten portföyde var
+                if hisse in hafiza: continue 
                 
-                # Kalite Puanı Hesabı
                 puan = 50 + (wt1 - wt2)*5
                 if wt1 < -60: puan += 10
                 puan = min(100, int(puan))
 
                 if puan >= 60:
-                    # SAATLİK VERİ ÇEK (Giriş Yeri İçin)
-                    df_hourly = get_data(hisse, tv, 'HOURLY')
+                    # SAATLİK VERİ ÇEK
+                    df_hourly = get_data_hybrid(hisse, source_obj, source_type, 'HOURLY')
                     if df_hourly is not None:
                         giris, stop, tp1, tp2 = calculate_metrics(df_daily, df_hourly, fiyat)
                         
-                        # YÜZDE HESAPLARI (Eski V10'daki gibi)
                         kazanc1 = round(((tp1 - giris)/giris)*100, 2)
                         kazanc2 = round(((tp2 - giris)/giris)*100, 2)
 
@@ -227,23 +261,24 @@ if __name__ == "__main__":
                         
                         send_telegram(msg)
                         print(f"✅ SİNYAL: {hisse}")
-                        hafiza[hisse] = simdi # Hafızaya ekle
+                        hafiza[hisse] = simdi 
+                        signal_count += 1
 
-            # --- SAT SİNYALİ (KORUMA) ---
+            # --- SAT SİNYALİ ---
             elif sell:
                 if hisse in hafiza:
-                    # 3 Gün (259200 sn) kuralı
                     gecen_sure = simdi - hafiza[hisse]
                     if gecen_sure < 259200: 
                         msg = f"🔴 <b>DİKKAT! TREND BOZULDU (#{hisse})</b>\nStop Ol / Kar Al."
                         send_telegram(msg)
                         print(f"⚠️ ÇIKIŞ: {hisse}")
-                    
-                    del hafiza[hisse] # Listeden sil
+                    del hafiza[hisse]
 
         except Exception as e:
             continue
 
     # HAFIZAYI GÜNCELLE
     hafiza_kaydet(hafiza)
-    print("🦁 TARAMA TAMAMLANDI. SİSTEM UYKUYA GEÇİYOR.")
+    
+    # SON RAPOR (LOGLARA YAZAR)
+    print(f"🦁 TARAMA BİTTİ. Taranan: {scan_count}, Sinyal: {signal_count}")

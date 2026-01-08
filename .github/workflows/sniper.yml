@@ -1,12 +1,12 @@
 name: SNIPER V10 - GHOST MODE
 
 on:
-  workflow_dispatch:      # Manuel başlatma butonu (Run workflow)
+  workflow_dispatch:      # Manuel başlatma
   schedule:
-    - cron: '*/15 * * * *'  # Her 15 dakikada bir otomatik çalışır (Piyasa takibi)
+    - cron: '*/15 * * * *'  # 15 dakikada bir çalışır
 
 permissions:
-  contents: write         # İşlem günlüğünü kaydetmesi için yazma izni
+  contents: write         # Kayıt izni
 
 jobs:
   run-sniper:
@@ -16,11 +16,10 @@ jobs:
     - name: Depoyu Çek (Checkout)
       uses: actions/checkout@v3
 
-    # KRİTİK ADIM: Hatanın çözümü burada (Python 3.10)
     - name: Python Kurulumu (3.10)
       uses: actions/setup-python@v4
       with:
-        python-version: '3.10'             
+        python-version: '3.10'
         cache: 'pip'
 
     - name: Kütüphaneleri Yükle
@@ -30,18 +29,16 @@ jobs:
 
     - name: SNIPER V10 ÇALIŞTIR
       env:
-        # GitHub Secrets kısmındaki anahtarları koda aktarır
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
         BINANCE_SECRET_KEY: ${{ secrets.BINANCE_SECRET_KEY }}
-      run: python sniper.py
+      # BURAYI DEĞİŞTİRDİK: sniper.py yerine app.py yaptık
+      run: python app.py
 
     - name: Hafızayı Güncelle (Commit & Push)
-      # Bot işlem yaparsa log dosyasını GitHub'a kaydeder
       run: |
         git config --global user.name "HknSoldier"
         git config --global user.email "action@github.com"
         git add .
-        # Değişiklik varsa commit at, yoksa hata verme
         git diff --quiet && git diff --staged --quiet || (git commit -m "SNIPER: İşlem Günlüğü Güncellendi" && git push)

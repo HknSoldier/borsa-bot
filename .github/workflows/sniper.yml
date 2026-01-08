@@ -48,3 +48,7 @@ jobs:
         git config --global user.email "action@github.com"
         git add .
         git diff --quiet && git diff --staged --quiet || (git commit -m "SNIPER: İşlem Günlüğü Güncellendi" && git push)
+
+    - name: TELEGRAM TEST MESAJI GONDER
+      run: |
+        curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} -d text="✅ SNIPER SISTEMI ONLINE! Bağlantı Başarılı."

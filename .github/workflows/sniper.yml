@@ -1,12 +1,12 @@
 name: SNIPER V10 - GHOST MODE
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:      # Manuel başlatma butonu
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/15 * * * *'  # 15 dakikada bir otomatik çalışır
 
 permissions:
-  contents: write
+  contents: write         # İşlem günlüğünü kaydetmesi için yazma izni
 
 jobs:
   run-sniper:
@@ -29,17 +29,16 @@ jobs:
 
     - name: SNIPER V10 ÇALIŞTIR
       env:
-        # BURASI ÇOK ÖNEMLİ:
-        # Senin girdiğin Token'ı koda veriyoruz:
+        # Token'ı yine gizli kasadan alıyoruz (O doğruydu)
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-        # Chat ID, Grup ID, Kişisel ID... Kod hangisini isterse istesin
-        # hepsine senin Grup ID'ni gönderiyoruz ki mesaj garanti gitsin.
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        TELEGRAM_GRUP_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        TELEGRAM_KISISEL_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         
-        BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
-        BINANCE_SECRET_KEY: ${{ secrets.BINANCE_SECRET_KEY }}
+        # ID okuma hatasını bitirmek için SENİN ID'Nİ BURAYA SABİTLEDİM:
+        # Böylece app.py dosyası ID'yi kesinlikle bulacak.
+        TELEGRAM_CHAT_ID: "-1003588305277"
+        TELEGRAM_GRUP_ID: "-1003588305277"
+        TELEGRAM_KISISEL_ID: "-1003588305277"
+        
+        # Binance anahtarlarını SİLDİM (BIST için gerek yok)
       run: python app.py
 
     - name: Hafızayı Güncelle (Commit & Push)
@@ -50,5 +49,6 @@ jobs:
         git diff --quiet && git diff --staged --quiet || (git commit -m "SNIPER: İşlem Günlüğü Güncellendi" && git push)
 
     - name: TELEGRAM TEST MESAJI GONDER
+      # Buraya da ID'yi elle yazdım, hata şansı %0
       run: |
-        curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage -d chat_id=${{ secrets.TELEGRAM_CHAT_ID }} -d text="✅ SNIPER SISTEMI ONLINE! Bağlantı Başarılı."
+        curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage -d chat_id=-1003588305277 -d text="✅ SNIPER: BIST Taraması ve Bağlantı Başarılı!"

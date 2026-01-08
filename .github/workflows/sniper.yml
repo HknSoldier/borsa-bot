@@ -3,7 +3,7 @@ name: SNIPER V10 - GHOST MODE
 on:
   workflow_dispatch:      # Manuel başlatma butonu
   schedule:
-    - cron: '*/15 * * * *'  # 15 dakikada bir otomatik çalışır
+    - cron: '*/5 * * * *'  # 5 dakikada bir otomatik çalışır
 
 permissions:
   contents: write         # İşlem günlüğünü kaydetmesi için yazma izni

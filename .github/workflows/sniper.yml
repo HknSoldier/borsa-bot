@@ -1,12 +1,12 @@
 name: SNIPER V10 - GHOST MODE
 
 on:
-  workflow_dispatch:      # Manuel başlatma butonu
+  workflow_dispatch:
   schedule:
-    - cron: '*/15 * * * *'  # Her 15 dakikada bir çalışır
+    - cron: '*/15 * * * *'
 
 permissions:
-  contents: write         # Kayıt izni
+  contents: write
 
 jobs:
   run-sniper:
@@ -29,11 +29,17 @@ jobs:
 
     - name: SNIPER V10 ÇALIŞTIR
       env:
+        # BURASI ÇOK ÖNEMLİ:
+        # Senin girdiğin Token'ı koda veriyoruz:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        # Chat ID, Grup ID, Kişisel ID... Kod hangisini isterse istesin
+        # hepsine senin Grup ID'ni gönderiyoruz ki mesaj garanti gitsin.
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        TELEGRAM_GRUP_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        TELEGRAM_KISISEL_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        
         BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
         BINANCE_SECRET_KEY: ${{ secrets.BINANCE_SECRET_KEY }}
-      # İŞTE DÜZELTTİĞİMİZ YER BURASI:
       run: python app.py
 
     - name: Hafızayı Güncelle (Commit & Push)

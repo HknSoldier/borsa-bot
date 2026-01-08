@@ -4,4 +4,4 @@ numpy
 requests
 yfinance
 scikit-learn
-https://github.com/rongardF/tvdatafeed.git
+git+https://github.com/rongardF/tvdatafeed.git

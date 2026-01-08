@@ -1,9 +1,9 @@
 name: SNIPER V10 - GHOST MODE
 
 on:
-  workflow_dispatch:      # Manuel başlatma
+  workflow_dispatch:      # Manuel başlatma butonu
   schedule:
-    - cron: '*/15 * * * *'  # 15 dakikada bir çalışır
+    - cron: '*/15 * * * *'  # Her 15 dakikada bir çalışır
 
 permissions:
   contents: write         # Kayıt izni
@@ -33,7 +33,7 @@ jobs:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         BINANCE_API_KEY: ${{ secrets.BINANCE_API_KEY }}
         BINANCE_SECRET_KEY: ${{ secrets.BINANCE_SECRET_KEY }}
-      # BURAYI DEĞİŞTİRDİK: sniper.py yerine app.py yaptık
+      # İŞTE DÜZELTTİĞİMİZ YER BURASI:
       run: python app.py
 
     - name: Hafızayı Güncelle (Commit & Push)

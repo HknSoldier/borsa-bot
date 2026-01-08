@@ -1,95 +1,84 @@
-import streamlit as st
 import pandas as pd
 import numpy as np
 import time
 import requests
 import json
 import os
-import random
 import yfinance as yf
 from datetime import datetime
-import pytz
 from tvDatafeed import TvDatafeed, Interval
-from sklearn.linear_model import LinearRegression
 
 # ==========================================
-# 1. AYARLAR
+# 1. AYARLAR VE GİZLİ ANAHTARLAR
 # ==========================================
 
-TELEGRAM_TOKEN = "7977796977:AAHNn1m3WbzfRTHOocfYTpQuhN6OWMRdwXg"
-TELEGRAM_GROUP_ID = "-1003588305277" 
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_GROUP_ID = os.environ.get("TELEGRAM_GROUP_ID")
+SESSION_ID = os.environ.get("SESSION_ID")
 
-SESSION_IDS = [
-    "9y4jonmcz5obe58iniuao9vfpjhig8o8",
-    "ru094zw3imbd2fmw9acga5ylx6ee15yh"
-]
-
-# 511 HİSSELİK LİSTE
 ACTIVE_WHITELIST = [
-    'AVOD', 'A1CAP', 'A1YEN', 'ACSEL', 'ADEL', 'ADESE', 'AFYON', 'AHSGY', 'AKENR', 'AKSUE', 
-    'ALCAR', 'ALCTL', 'ALKIM', 'ALKA', 'ALKLC', 'AYCES', 'ALVES', 'ASUZU', 'ANGEN', 'ANELE', 
-    'ARENA', 'ARFYE', 'ARSAN', 'ARTMS', 'ARZUM', 'AVGYO', 'AVHOL', 'AYEN', 'AZTEK', 'BAGFS', 
-    'BAHKM', 'BAKAB', 'BNTAS', 'BANVT', 'BARMA', 'BEGYO', 'BAYRK', 'BEYAZ', 'BIGTK', 'BLCYT', 
-    'BRKVY', 'BRLSM', 'BIZIM', 'BLUME', 'BMSTL', 'BMSCH', 'BORSK', 'BOSSA', 'BULGS', 'BURCE', 
-    'BVSAN', 'BIGCH', 'CRFSA', 'CEOEM', 'CONSE', 'CGCAM', 'CATES', 'CELHA', 'CEMAS', 'CEMTS', 
-    'CMBTN', 'CUSAN', 'DAGI', 'DARDL', 'DGATE', 'DCTTR', 'DMSAS', 'DENGE', 'DZGYO', 'DERIM', 
-    'DERHL', 'DESA', 'DESPC', 'DNISI', 'DITAS', 'DMRGD', 'DOCO', 'DOFER', 'DGNMO', 'DOKTA', 
-    'DURDO', 'DURKN', 'DUNYH', 'DYOBY', 'ECOGR', 'EDATA', 'EDIP', 'EPLAS', 'EGPRO', 'EGSER', 
-    'EGEGY', 'EKOS', 'EKSUN', 'ELITE', 'EMKEL', 'ENSRI', 'ERBOS', 'KIMMR', 'ESCOM', 'ETILR', 
-    'EYGYO', 'FADE', 'FMIZP', 'FONET', 'FORMT', 'FORTE', 'FRIGO', 'GARFA', 'GEDIK', 'GEDZA', 
-    'GEREL', 'GZNMI', 'GMTAS', 'GOODY', 'GSDDE', 'GSDHO', 'GLRYH', 'GUNDG', 'HATEK', 'HDFGS', 
-    'HEDEF', 'HKTM', 'HOROZ', 'HUNER', 'HURGZ', 'ICBCT', 'ICUGS', 'INGRM', 'IHLGM', 'IHGZT', 
-    'IHAAS', 'IHYAY', 'IMASM', 'INFO', 'INTEM', 'ISSEN', 'ISGSY', 'ISYAT', 'IZMDC', 'IZFAS', 
-    'JANTS', 'KFEIN', 'KAPLM', 'KRDMB', 'KRTEK', 'KARTN', 'KRVGD', 'KLMSN', 'KLSYN', 'KNFRT', 
-    'KONKA', 'KGYO', 'KRPLS', 'KRGYO', 'KRSTL', 'KRONT', 'KBORU', 'KZGYO', 'KUTPO', 'KTSKR', 
-    'LIDFA', 'LKMNH', 'LRSHO', 'LUKSK', 'LYDYE', 'MACKO', 'MAKIM', 'MAKTK', 'MANAS', 'MARKA', 
-    'MARMR', 'MAALT', 'MRSHL', 'MRGYO', 'MARTI', 'MTRKS', 'MEDTR', 'MEKAG', 'MNDRS', 'MERCN', 
-    'MERIT', 'MERKO', 'METRO', 'MHRGY', 'MSGYO', 'MOGAN', 'MNDTR', 'EGEPO', 'NTGAZ', 'NETAS', 
-    'NIBAS', 'NUGYO', 'OBASE', 'OFSYM', 'ONCSM', 'ONRYT', 'OSMEN', 'OSTIM', 'OTTO', 'OYYAT', 
-    'OZGYO', 'OZSUB', 'OZYSR', 'PAMEL', 'PNLSN', 'PAGYO', 'PRDGS', 'PRKME', 'PCILT', 'PEKGY', 
-    'PENGD', 'PENTA', 'PKENT', 'PETUN', 'PINSU', 'PNSUT', 'PKART', 'RAYSG', 'RTALB', 'RUBNS', 
-    'RUZYE', 'SAFKR', 'SNICA', 'SANFM', 'SANKO', 'SAYAS', 'SEGMN', 'SELVA', 'SERNT', 'SMART', 
-    'SOKE', 'SKTAS', 'SMRVA', 'SEGYO', 'SKYMD', 'TARKM', 'TATGD', 'TEKTU', 'TKNSA', 'TMPOL', 
-    'TERA', 'TEHOL', 'TGSAS', 'TLMAN', 'TSGYO', 'TUCLK', 'MARBL', 'TRILC', 'TURGG', 'PRKAB', 
-    'TBORG', 'UFUK', 'ULUFA', 'ULUSE', 'ULUUN', 'UNLU', 'VKGYO', 'VBTYZ', 'VRGYO', 'VERUS', 
-    'VERTU', 'VKING', 'VSNMD', 'YATAS', 'YAYLA', 'YYAPI', 'YESIL', 'YIGIT', 'YKSLN', 'YUNSA', 
-    'ZEDUR', 'BINHO', 'ADGYO', 'AGHOL', 'AGESA', 'AGROT', 'AHGAZ', 'AKBNK', 'AKCNS', 'AKFGY', 
-    'AKFIS', 'AKFYE', 'AKSGY', 'AKSA', 'AKSEN', 'AKGRT', 'ALGYO', 'ALARK', 'ALBRK', 'ALFAS', 
-    'ALTNY', 'ANSGR', 'AEFES', 'ANHYT', 'ARCLK', 'ARDYZ', 'ARMGD', 'ASGYO', 'ASELS', 'ASTOR', 
-    'ATAKP', 'ATATP', 'AVPGY', 'AYDEM', 'AYGAZ', 'BALSU', 'BASGZ', 'BTCIM', 'BSOKE', 'BERA', 
-    'BESLR', 'BJKAS', 'BIENY', 'BIMAS', 'BINBN', 'BIOEN', 'BIGEN', 'BOBET', 'BORLS', 'BRSAN', 
-    'BRYAT', 'BFREN', 'BRISA', 'BUCIM', 'CEMZY', 'CCOLA', 'CVKMD', 'CWENE', 'CANTE', 'CLEBI', 
-    'CIMSA', 'DAPGM', 'DSTKF', 'DEVA', 'DOFRB', 'DOHOL', 'ARASE', 'DOAS', 'EBEBK', 'ECZYT', 
-    'EFOR', 'EGEEN', 'EGGUB', 'ECILC', 'EKGYO', 'ENDAE', 'ENJSA', 'ENERY', 'ENKAI', 'ERCB', 
-    'EREGL', 'ESCAR', 'ESEN', 'TEZOL', 'EUREN', 'EUPWR', 'FENER', 'FROTO', 'FZLGY', 'GSRAY', 
-    'GWIND', 'GLCVY', 'GENIL', 'GENTS', 'GIPTA', 'GESAN', 'GLYHO', 'GOKNR', 'GOLTS', 'GOZDE', 
-    'GRTHO', 'GUBRF', 'GLRMK', 'GRSEL', 'SAHOL', 'HLGYO', 'HRKET', 'HATSN', 'HEKTS', 'HTTBT', 
-    'ENTRA', 'INVEO', 'INVES', 'IEYHO', 'ISKPL', 'IHLAS', 'INDES', 'ISDMR', 'ISFIN', 'ISGYO', 
-    'ISMEN', 'IZENR', 'KLKIM', 'KLSER', 'KLYPV', 'KRDMA', 'KRDMD', 'KAREL', 'KARSN', 'KTLEV', 
-    'KATMR', 'KAYSE', 'TCKRC', 'KZBGY', 'KLGYO', 'KLRHO', 'KMPUR', 'KCAER', 'KCHOL', 'KOCMT', 
-    'KONTR', 'KONYA', 'KORDS', 'KOTON', 'KOPOL', 'KUYAS', 'LIDER', 'LILAK', 'LMKDC', 'LINK', 
-    'LOGO', 'LYDHO', 'MAGEN', 'MAVI', 'MEGMT', 'MIATK', 'MGROS', 'MPARK', 'MOBTL', 'MOPAS', 
-    'NATEN', 'NTHOL', 'NUHCM', 'OBAMS', 'ODAS', 'ODINE', 'ORGE', 'OTKAR', 'OYAKC', 'OZKGY', 
-    'OZATD', 'PAPIL', 'PARSN', 'PASEU', 'PSGYO', 'PAHOL', 'PATEK', 'PGSUS', 'PETKM', 'PLTUR', 
-    'POLHO', 'POLTK', 'QUAGR', 'RALYH', 'REEDR', 'RYGYO', 'RYSAS', 'RGYAS', 'SARKY', 'SASA', 
-    'SDTTR', 'SELEC', 'SRVGY', 'SNGYO', 'SMRTG', 'SUNTK', 'SURGY', 'SUWEN', 'SKBNK', 'SOKM', 
-    'TABGD', 'TNZTP', 'TATEN', 'TAVHL', 'TKFEN', 'TOASO', 'TRGYO', 'TSPOR', 'TRMET', 'TRENJ', 
-    'TUKAS', 'TRCAS', 'TUREX', 'TCELL', 'TMSN', 'TUPRS', 'TRALT', 'THYAO', 'GARAN', 'HALKB', 
-    'ISCTR', 'TSKB', 'TURSG', 'SISE', 'VAKBN', 'TTKOM', 'TTRAK', 'USAK', 'ULKER', 'VAKFA', 
-    'VAKFN', 'VAKKO', 'VESBE', 'VESTL', 'YKBNK', 'YAPRK', 'YYLGD', 'YGGYO', 'YEOTK', 'ZERGY', 
-    'ZRGYO', 'ZOREN'
+    'AVOD', 'A1CAP', 'ACSEL', 'ADEL', 'ADESE', 'AFYON', 'AKENR', 'AKSUE', 'ALCAR', 'ALKIM', 
+    'ALKA', 'ASUZU', 'ANGEN', 'ANELE', 'ARFYE', 'ARSAN', 'ARTMS', 'ARZUM', 'AVGYO', 'AVHOL', 
+    'AYEN', 'AZTEK', 'BAGFS', 'BANVT', 'BARMA', 'BEGYO', 'BAYRK', 'BEYAZ', 'BLCYT', 'BRLSM', 
+    'BIZIM', 'BOSSA', 'BURCE', 'BVSAN', 'BIGCH', 'CRFSA', 'CEOEM', 'CONSE', 'CGCAM', 'CATES', 
+    'CEMTS', 'CMBTN', 'CUSAN', 'DAGI', 'DARDL', 'DGATE', 'DCTTR', 'DMSAS', 'DERIM', 'DESA', 
+    'DESPC', 'DNISI', 'DITAS', 'DMRGD', 'DOCO', 'DOFER', 'DGNMO', 'DOKTA', 'DURDO', 'DYOBY', 
+    'EDATA', 'EDIP', 'EPLAS', 'EGPRO', 'EGSER', 'EKOS', 'EKSUN', 'ELITE', 'EMKEL', 'ENSRI', 
+    'ERBOS', 'KIMMR', 'ESCOM', 'ETILR', 'EYGYO', 'FADE', 'FMIZP', 'FONET', 'FORMT', 'FORTE', 
+    'FRIGO', 'GARFA', 'GEDIK', 'GEDZA', 'GEREL', 'GZNMI', 'GMTAS', 'GOODY', 'GSDDE', 'GSDHO', 
+    'GLRYH', 'GUNDG', 'HATEK', 'HDFGS', 'HEDEF', 'HKTM', 'HOROZ', 'HUNER', 'HURGZ', 'ICBCT', 
+    'INGRM', 'IHLGM', 'IHGZT', 'IHAAS', 'IHYAY', 'IMASM', 'INFO', 'INTEM', 'ISSEN', 'ISGSY', 
+    'ISYAT', 'IZMDC', 'IZFAS', 'JANTS', 'KFEIN', 'KAPLM', 'KRDMB', 'KRTEK', 'KARTN', 'KRVGD', 
+    'KLMSN', 'KLSYN', 'KNFRT', 'KONKA', 'KGYO', 'KRPLS', 'KRGYO', 'KRSTL', 'KRONT', 'KBORU', 
+    'KZGYO', 'KUTPO', 'KTSKR', 'LIDFA', 'LKMNH', 'LRSHO', 'LUKSK', 'LYDYE', 'MACKO', 'MAKIM', 
+    'MAKTK', 'MANAS', 'MARKA', 'MAALT', 'MRSHL', 'MRGYO', 'MARTI', 'MTRKS', 'MEDTR', 'MEKAG', 
+    'MNDRS', 'MERCN', 'MERIT', 'MERKO', 'METRO', 'MHRGY', 'MSGYO', 'MOGAN', 'MNDTR', 'EGEPO', 
+    'NTGAZ', 'NETAS', 'NIBAS', 'NUGYO', 'OBASE', 'OFSYM', 'ONCSM', 'ONRYT', 'OSMEN', 'OSTIM', 
+    'OTTO', 'OYYAT', 'OZGYO', 'OZSUB', 'OZYSR', 'PAMEL', 'PNLSN', 'PAGYO', 'PRDGS', 'PRKME', 
+    'PCILT', 'PEKGY', 'PENGD', 'PENTA', 'PKENT', 'PETUN', 'PINSU', 'PNSUT', 'PKART', 'RAYSG', 
+    'RTALB', 'RUBNS', 'RUZYE', 'SAFKR', 'SNICA', 'SANFM', 'SANKO', 'SAYAS', 'SEGMN', 'SELVA', 
+    'SERNT', 'SMART', 'SOKE', 'SKTAS', 'SMRVA', 'SEGYO', 'SKYMD', 'TARKM', 'TATGD', 'TEKTU', 
+    'TKNSA', 'TMPOL', 'TERA', 'TEHOL', 'TGSAS', 'TLMAN', 'TSGYO', 'TUCLK', 'MARBL', 'TRILC', 
+    'TURGG', 'PRKAB', 'TBORG', 'UFUK', 'ULUFA', 'ULUSE', 'ULUUN', 'UNLU', 'VKGYO', 'VBTYZ', 
+    'VRGYO', 'VERUS', 'VERTU', 'VKING', 'VSNMD', 'YATAS', 'YAYLA', 'YYAPI', 'YESIL', 'YIGIT', 
+    'YKSLN', 'YUNSA', 'ZEDUR', 'BINHO', 'ADGYO', 'AGHOL', 'AGESA', 'AGROT', 'AHGAZ', 'AKBNK', 
+    'AKCNS', 'AKFGY', 'AKFIS', 'AKFYE', 'AKSGY', 'AKSA', 'AKSEN', 'AKGRT', 'ALGYO', 'ALARK', 
+    'ALBRK', 'ALFAS', 'ALTNY', 'ANSGR', 'AEFES', 'ANHYT', 'ARCLK', 'ARDYZ', 'ARMGD', 'ASGYO', 
+    'ASELS', 'ASTOR', 'ATAKP', 'ATATP', 'AVPGY', 'AYDEM', 'AYGAZ', 'BALSU', 'BASGZ', 'BTCIM', 
+    'BSOKE', 'BERA', 'BESLR', 'BJKAS', 'BIENY', 'BIMAS', 'BINBN', 'BIOEN', 'BIGEN', 'BOBET', 
+    'BORLS', 'BRSAN', 'BRYAT', 'BFREN', 'BRISA', 'BUCIM', 'CEMZY', 'CCOLA', 'CVKMD', 'CWENE', 
+    'CANTE', 'CLEBI', 'CIMSA', 'DAPGM', 'DSTKF', 'DEVA', 'DOFRB', 'DOHOL', 'ARASE', 'DOAS', 
+    'EBEBK', 'ECZYT', 'EFOR', 'EGEEN', 'EGGUB', 'ECILC', 'EKGYO', 'ENDAE', 'ENJSA', 'ENERY', 
+    'ENKAI', 'ERCB', 'EREGL', 'ESCAR', 'ESEN', 'TEZOL', 'EUREN', 'EUPWR', 'FENER', 'FROTO', 
+    'FZLGY', 'GSRAY', 'GWIND', 'GLCVY', 'GENIL', 'GENTS', 'GIPTA', 'GESAN', 'GLYHO', 'GOKNR', 
+    'GOLTS', 'GOZDE', 'GRTHO', 'GUBRF', 'GLRMK', 'GRSEL', 'SAHOL', 'HLGYO', 'HRKET', 'HATSN', 
+    'HEKTS', 'HTTBT', 'ENTRA', 'INVEO', 'INVES', 'IEYHO', 'ISKPL', 'IHLAS', 'INDES', 'ISDMR', 
+    'ISFIN', 'ISGYO', 'ISMEN', 'IZENR', 'KLKIM', 'KLSER', 'KLYPV', 'KRDMA', 'KRDMD', 'KAREL', 
+    'KARSN', 'KTLEV', 'KATMR', 'KAYSE', 'TCKRC', 'KZBGY', 'KLGYO', 'KLRHO', 'KMPUR', 'KCAER', 
+    'KCHOL', 'KOCMT', 'KONTR', 'KONYA', 'KORDS', 'KOTON', 'KOPOL', 'KUYAS', 'LIDER', 'LILAK', 
+    'LMKDC', 'LINK', 'LOGO', 'LYDHO', 'MAGEN', 'MAVI', 'MEGMT', 'MIATK', 'MGROS', 'MPARK', 
+    'MOBTL', 'MOPAS', 'NATEN', 'NTHOL', 'NUHCM', 'OBAMS', 'ODAS', 'ODINE', 'ORGE', 'OTKAR', 
+    'OYAKC', 'OZKGY', 'OZATD', 'PAPIL', 'PARSN', 'PASEU', 'PSGYO', 'PAHOL', 'PATEK', 'PGSUS', 
+    'PETKM', 'PLTUR', 'POLHO', 'POLTK', 'QUAGR', 'RALYH', 'REEDR', 'RYGYO', 'RYSAS', 'RGYAS', 
+    'SARKY', 'SASA', 'SDTTR', 'SELEC', 'SRVGY', 'SNGYO', 'SMRTG', 'SUNTK', 'SURGY', 'SUWEN', 
+    'SKBNK', 'SOKM', 'TABGD', 'TNZTP', 'TATEN', 'TAVHL', 'TKFEN', 'TOASO', 'TRGYO', 'TSPOR', 
+    'TRMET', 'TRENJ', 'TUKAS', 'TRCAS', 'TUREX', 'TCELL', 'TMSN', 'TUPRS', 'TRALT', 'THYAO', 
+    'GARAN', 'HALKB', 'ISCTR', 'TSKB', 'TURSG', 'SISE', 'VAKBN', 'TTKOM', 'TTRAK', 'USAK', 
+    'ULKER', 'VAKFA', 'VAKFN', 'VAKKO', 'VESBE', 'VESTL', 'YKBNK', 'YAPRK', 'YYLGD', 'YGGYO', 
+    'YEOTK', 'ZERGY', 'ZRGYO', 'ZOREN'
 ]
 
 HAFIZA_DOSYASI = "sinyal_hafizasi.json"
 
 # ==========================================
-# 2. MOTORLAR (MULTI-TIMEFRAME ENGINE)
+# 2. MOTORLAR (V10 MANTIĞI)
 # ==========================================
 
-def init_tv_failover():
-    for index, sess_id in enumerate(SESSION_IDS):
-        try:
-            temp_tv = TvDatafeed()
+def init_tv():
+    # Session ID ile TradingView'a bağlan (Misafir Modu Engelleyici)
+    try:
+        temp_tv = TvDatafeed()
+        if SESSION_ID:
             s_obj = None
             for attr in dir(temp_tv):
                 try:
@@ -99,119 +88,53 @@ def init_tv_failover():
                 except: continue
             
             if s_obj:
-                s_obj.cookies.update({'sessionid': sess_id})
+                s_obj.cookies.update({'sessionid': SESSION_ID})
                 s_obj.headers.update({'User-Agent': 'Mozilla/5.0'})
+                print("✅ TV: Session ID Enjekte Edildi.")
             else:
-                temp_tv.session = requests.Session()
-                temp_tv.session.cookies.update({'sessionid': sess_id})
+                print("⚠️ TV: Session objesi bulunamadı, misafir modu.")
+        return temp_tv
+    except:
+        return None
 
-            if not temp_tv.get_hist('THYAO', 'BIST', Interval.in_daily, n_bars=1).empty:
-                return temp_tv, "TV"
-        except: continue
-    
+def get_data(symbol, tv_object, interval_str):
     try:
-        if not TvDatafeed().get_hist('THYAO', 'BIST', Interval.in_daily, n_bars=1).empty:
-            return TvDatafeed(), "TV"
-    except: pass
-    
+        if interval_str == 'DAILY':
+            return tv_object.get_hist(symbol=symbol, exchange='BIST', interval=Interval.in_daily, n_bars=100)
+        elif interval_str == 'HOURLY':
+            return tv_object.get_hist(symbol=symbol, exchange='BIST', interval=Interval.in_1_hour, n_bars=100)
+    except: return None
+
+def bist_yuvarlama(fiyat):
+    if fiyat < 20.00: tick = 0.01
+    elif fiyat < 50.00: tick = 0.02
+    elif fiyat < 100.00: tick = 0.05
+    elif fiyat < 250.00: tick = 0.10
+    else: tick = 0.25
+    return round(round(fiyat / tick) * tick, 2)
+
+def calculate_metrics(df_daily, df_hourly, current_price):
     try:
-        if not yf.download("THYAO.IS", period="1d", progress=False).empty:
-            return None, "YF"
-    except: pass
-    return None, "FAIL"
+        # GİRİŞ: Hourly VWAP - StdDev (V10 Özel Giriş Taktiği)
+        df_hourly.columns = [c.capitalize() for c in df_hourly.columns]
+        std_dev = df_hourly['Close'].rolling(window=20).std().iloc[-1]
+        vwap = (df_hourly['High'].iloc[-1] + df_hourly['Low'].iloc[-1] + df_hourly['Close'].iloc[-1]) / 3
+        giris = bist_yuvarlama(vwap - (std_dev * 0.5))
+        if giris >= current_price: giris = current_price * 0.997
 
-def get_data(symbol, tv_object, source_type, timeframe):
-    try:
-        if source_type == "TV":
-            interval = Interval.in_daily if timeframe == 'DAILY' else Interval.in_1_hour
-            return tv_object.get_hist(symbol=symbol, exchange='BIST', interval=interval, n_bars=100)
-        elif source_type == "YF":
-            yf_sym = symbol + ".IS"
-            p = "6mo" if timeframe == 'DAILY' else "1mo"
-            i = "1d" if timeframe == 'DAILY' else "1h"
-            df = yf.download(yf_sym, period=p, interval=i, progress=False)
-            if not df.empty:
-                df = df.rename(columns={"Open":"open","High":"high","Low":"low","Close":"close","Volume":"volume"})
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = df.columns.get_level_values(0)
-                    df.columns = [c.lower() for c in df.columns]
-                return df
-    except: pass
-    return None
+        # STOP/HEDEF: Daily ATR
+        df_daily.columns = [c.capitalize() for c in df_daily.columns]
+        high_low = df_daily['High'] - df_daily['Low']
+        high_close = (df_daily['High'] - df_daily['Close'].shift()).abs()
+        low_close = (df_daily['Low'] - df_daily['Close'].shift()).abs()
+        atr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1).rolling(14).mean().iloc[-1]
 
-# ==========================================
-# 3. ZEKİ GİRİŞ VE HEDEF MOTORU (PRO MATH)
-# ==========================================
+        stop = bist_yuvarlama(giris - (atr * 1.5))
+        tp1 = bist_yuvarlama(giris + (atr * 3.0))
+        tp2 = bist_yuvarlama(giris + (atr * 5.0))
 
-class SmartEntryEngine:
-    def __init__(self):
-        pass
-    
-    def bist_yuvarlama(self, fiyat):
-        """BIST Tick Size Kuralı"""
-        if fiyat < 20.00: tick = 0.01
-        elif fiyat < 50.00: tick = 0.02
-        elif fiyat < 100.00: tick = 0.05
-        elif fiyat < 250.00: tick = 0.10
-        elif fiyat < 500.00: tick = 0.25
-        elif fiyat < 1000.00: tick = 0.50
-        else: tick = 1.00
-        return round(round(fiyat / tick) * tick, 2)
-
-    def calculate_smart_entry(self, df_hourly, current_price):
-        """
-        GİRİŞ MOTORU (Dokunulmadı - Senin sevdiğin V9 Mantığı)
-        Standart Sapma + VWAP = Kusursuz Giriş
-        """
-        try:
-            df_hourly.columns = [c.capitalize() for c in df_hourly.columns]
-            
-            # Standart Sapma Hesabı (Oynaklık)
-            std_dev = df_hourly['Close'].rolling(window=20).std().iloc[-1]
-            if pd.isna(std_dev): std_dev = current_price * 0.005 
-            
-            # VWAP (Adil Değer)
-            vwap = (df_hourly['High'].iloc[-1] + df_hourly['Low'].iloc[-1] + df_hourly['Close'].iloc[-1]) / 3
-            
-            # Dinamik Giriş Hedefi (VWAP - Yarım Sapma)
-            target_raw = vwap - (std_dev * 0.5)
-            
-            if target_raw >= current_price:
-                target_raw = current_price * 0.997
-                
-            return self.bist_yuvarlama(target_raw)
-            
-        except: return self.bist_yuvarlama(current_price * 0.995)
-
-    def calculate_atr_metrics(self, df_daily, entry_price):
-        """
-        ÇIKIŞ MOTORU (Satış Hedefleri)
-        ATR (Ortalama Gerçek Aralık) kullanarak hedefleri belirler.
-        """
-        try:
-            df_daily.columns = [c.capitalize() for c in df_daily.columns]
-            high_low = df_daily['High'] - df_daily['Low']
-            high_close = (df_daily['High'] - df_daily['Close'].shift()).abs()
-            low_close = (df_daily['Low'] - df_daily['Close'].shift()).abs()
-            ranges = pd.concat([high_low, high_close, low_close], axis=1)
-            atr = np.max(ranges, axis=1).rolling(14).mean().iloc[-1]
-            
-            # --- PROFESYONEL HEDEFLEME ---
-            raw_stop = entry_price - (atr * 1.5) # Stop: 1.5 birim aşağı
-            raw_tp1 = entry_price + (atr * 3.0)  # Hedef 1: 3 birim yukarı (Güvenli)
-            raw_tp2 = entry_price + (atr * 5.0)  # Hedef 2: 5 birim yukarı (Ralli)
-            
-            return {
-                "stop": self.bist_yuvarlama(raw_stop),
-                "tp1": self.bist_yuvarlama(raw_tp1),
-                "tp2": self.bist_yuvarlama(raw_tp2)
-            }
-        except: 
-            return {
-                "stop": self.bist_yuvarlama(entry_price * 0.97),
-                "tp1": self.bist_yuvarlama(entry_price * 1.05),
-                "tp2": self.bist_yuvarlama(entry_price * 1.08)
-            }
+        return giris, stop, tp1, tp2
+    except: return 0, 0, 0, 0
 
 def wavetrend_check(df):
     try:
@@ -223,14 +146,10 @@ def wavetrend_check(df):
         wt1 = ci.ewm(span=21, adjust=False).mean()
         wt2 = wt1.rolling(window=4).mean()
         
-        wt1_now = wt1.iloc[-1]
-        wt2_now = wt2.iloc[-1]
-        wt1_prev = wt1.iloc[-2]
-        wt2_prev = wt2.iloc[-2]
-        
-        buy = (wt1_prev < wt2_prev) and (wt1_now > wt2_now) and (wt1_prev < -40)
-        sell = (wt1_prev > wt2_prev) and (wt1_now < wt2_now) and (wt1_prev > 40)
-        return buy, sell, wt1_now, wt2_now
+        # NET KESİŞİM KURALI (V10 ile aynı)
+        buy = (wt1.iloc[-2] < wt2.iloc[-2]) and (wt1.iloc[-1] > wt2.iloc[-1]) and (wt1.iloc[-1] < -40)
+        sell = (wt1.iloc[-2] > wt2.iloc[-2]) and (wt1.iloc[-1] < wt2.iloc[-1])
+        return buy, sell, wt1.iloc[-1], wt2.iloc[-1]
     except: return False, False, 0, 0
 
 def send_telegram(message):
@@ -240,105 +159,91 @@ def send_telegram(message):
         requests.post(url, data=data, timeout=5)
     except: pass
 
-def tr_saat():
-    return datetime.now(pytz.timezone('Europe/Istanbul'))
+def hafiza_yukle():
+    if os.path.exists(HAFIZA_DOSYASI):
+        try:
+            with open(HAFIZA_DOSYASI, 'r') as f: return json.load(f)
+        except: return {}
+    return {}
 
-def hafiza_islem(mode, data=None):
-    if mode == "load":
-        if os.path.exists(HAFIZA_DOSYASI):
-            try: 
-                with open(HAFIZA_DOSYASI, 'r') as f: return json.load(f)
-            except: return {}
-        return {}
-    elif mode == "save":
-        try: 
-            with open(HAFIZA_DOSYASI, 'w') as f: json.dump(data, f)
-        except: pass
+def hafiza_kaydet(data):
+    try:
+        with open(HAFIZA_DOSYASI, 'w') as f: json.dump(data, f)
+    except: pass
 
 # ==========================================
-# 4. ANA DÖNGÜ
+# 3. GHOST MODE (TEK SEFERLİK ÇALIŞMA)
 # ==========================================
 
-st.set_page_config(page_title="Sniper V10 - FULL PRO", page_icon="🦁", layout="wide")
-st.title("🦁 SNIPER AI - GİRİŞ + ÇIKIŞ FULL OTOMATİK")
-
-tv_obj, source_mode = init_tv_failover()
-smart_ai = SmartEntryEngine()
-hafiza = hafiza_islem("load")
-
-if source_mode == "FAIL":
-    st.error("🚨 SİSTEM ÇÖKTÜ!")
-else:
-    st.success(f"✅ SİSTEM AKTİF | MOD: {source_mode} | STRATEJİ: Volatilite Bazlı Al/Sat")
+if __name__ == "__main__":
+    print("🦁 SNIPER AI - GHOST MODE BAŞLATILIYOR...")
     
-    status = st.empty()
-    bar = st.progress(0)
-    simdi = tr_saat()
-    sinyal_sayisi = 0
+    tv = init_tv()
+    hafiza = hafiza_yukle()
+    simdi = time.time()
+    
+    if tv is None:
+        print("❌ HATA: Veri kaynağına bağlanılamadı.")
+        exit()
 
-    if 9 <= simdi.hour <= 18:
-        for i, hisse in enumerate(ACTIVE_WHITELIST):
-            try:
-                status.text(f"🔍 {hisse} Analiz Ediliyor...")
-                bar.progress((i+1)/len(ACTIVE_WHITELIST))
-                if source_mode == "TV": time.sleep(random.uniform(0.5, 1.2))
-                
-                df_daily = get_data(hisse, tv_obj, source_mode, "DAILY")
-                if df_daily is None or df_daily.empty: continue
-                
-                buy_daily, sell_daily, wt1, wt2 = wavetrend_check(df_daily)
-                fiyat = df_daily['close'].iloc[-1] if 'close' in df_daily.columns else df_daily['Close'].iloc[-1]
-                su_an = time.time()
+    for hisse in ACTIVE_WHITELIST:
+        try:
+            # GÜNLÜK VERİ ÇEK (Sinyal İçin)
+            df_daily = get_data(hisse, tv, 'DAILY')
+            if df_daily is None or df_daily.empty: continue
 
-                if buy_daily:
-                    if hisse in hafiza: continue 
-                    
-                    df_hourly = get_data(hisse, tv_obj, source_mode, "HOURLY")
-                    puan = 50 + (wt1 - wt2)*5
-                    if wt1 < -60: puan += 10
-                    puan = min(100, int(puan))
-                    
-                    if puan >= 60:
-                        # 1. GİRİŞİ HESAPLA (V9 Mantığı - Aynı)
-                        if df_hourly is not None and not df_hourly.empty:
-                            giris = smart_ai.calculate_smart_entry(df_hourly, fiyat)
-                        else:
-                            giris = smart_ai.bist_yuvarlama(fiyat * 0.995)
+            # ANALİZ YAP
+            buy, sell, wt1, wt2 = wavetrend_check(df_daily)
+            fiyat = df_daily['close'].iloc[-1]
+
+            # --- AL SİNYALİ ---
+            if buy:
+                if hisse in hafiza: continue # Zaten portföyde var
+                
+                # Kalite Puanı Hesabı
+                puan = 50 + (wt1 - wt2)*5
+                if wt1 < -60: puan += 10
+                puan = min(100, int(puan))
+
+                if puan >= 60:
+                    # SAATLİK VERİ ÇEK (Giriş Yeri İçin)
+                    df_hourly = get_data(hisse, tv, 'HOURLY')
+                    if df_hourly is not None:
+                        giris, stop, tp1, tp2 = calculate_metrics(df_daily, df_hourly, fiyat)
                         
-                        # 2. ÇIKIŞI HESAPLA (Yeni Profesyonel Modül)
-                        metrics = smart_ai.calculate_atr_metrics(df_daily, giris)
-                        
-                        kazanc1 = round(((metrics["tp1"] - giris)/giris)*100, 2)
-                        kazanc2 = round(((metrics["tp2"] - giris)/giris)*100, 2)
+                        # YÜZDE HESAPLARI (Eski V10'daki gibi)
+                        kazanc1 = round(((tp1 - giris)/giris)*100, 2)
+                        kazanc2 = round(((tp2 - giris)/giris)*100, 2)
 
                         msg = f"🟢 <b>GÜNLÜK TREND YAKALANDI! (#{hisse})</b>\n\n"
                         msg += f"🦁 <b>Hisse:</b> #{hisse}\n"
                         msg += f"⭐ <b>Kalite:</b> {puan}/100\n"
                         msg += f"💰 <b>Akıllı Giriş:</b> {giris} TL\n"
                         msg += f"---------------------------------\n"
-                        msg += f"🎯 <b>Hedef 1 (Kar Al):</b> {metrics['tp1']} TL (+%{kazanc1})\n"
-                        msg += f"🚀 <b>Hedef 2 (Ana Hedef):</b> {metrics['tp2']} TL (+%{kazanc2})\n"
+                        msg += f"🎯 <b>Hedef 1 (Kar Al):</b> {tp1} TL (+%{kazanc1})\n"
+                        msg += f"🚀 <b>Hedef 2 (Ana Hedef):</b> {tp2} TL (+%{kazanc2})\n"
                         msg += f"---------------------------------\n"
-                        msg += f"🛡️ <b>Zarar Kes (Stop):</b> {metrics['stop']} TL\n"
+                        msg += f"🛡️ <b>Zarar Kes (Stop):</b> {stop} TL\n"
                         
                         send_telegram(msg)
-                        sinyal_sayisi += 1
-                        hafiza[hisse] = su_an
-                        hafiza_islem("save", hafiza)
+                        print(f"✅ SİNYAL: {hisse}")
+                        hafiza[hisse] = simdi # Hafızaya ekle
 
-                elif sell_daily:
-                    if hisse in hafiza:
-                        if (su_an - hafiza[hisse]) <= 259200:
-                            msg = f"🔴 <b>DİKKAT! TREND BOZULDU (#{hisse})</b>\nStop Ol / Kar Al."
-                            send_telegram(msg)
-                        del hafiza[hisse]
-                        hafiza_islem("save", hafiza)
+            # --- SAT SİNYALİ (KORUMA) ---
+            elif sell:
+                if hisse in hafiza:
+                    # 3 Gün (259200 sn) kuralı
+                    gecen_sure = simdi - hafiza[hisse]
+                    if gecen_sure < 259200: 
+                        msg = f"🔴 <b>DİKKAT! TREND BOZULDU (#{hisse})</b>\nStop Ol / Kar Al."
+                        send_telegram(msg)
+                        print(f"⚠️ ÇIKIŞ: {hisse}")
+                    
+                    del hafiza[hisse] # Listeden sil
 
-            except: continue
-        
-        status.success(f"Tur Tamamlandı. {sinyal_sayisi} işlem bulundu. Yeniden başlıyor...")
-    else:
-        st.warning("🌙 Piyasa Kapalı.")
+        except Exception as e:
+            continue
 
-    time.sleep(60)
-    st.rerun()
+    # HAFIZAYI GÜNCELLE
+    hafiza_kaydet(hafiza)
+    print("🦁 TARAMA TAMAMLANDI. SİSTEM UYKUYA GEÇİYOR.")

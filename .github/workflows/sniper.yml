@@ -29,16 +29,14 @@ jobs:
 
     - name: SNIPER V10 ÇALIŞTIR
       env:
-        # Token'ı yine gizli kasadan alıyoruz (O doğruydu)
+        # Token gizli kasadan geliyor
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         
-        # ID okuma hatasını bitirmek için SENİN ID'Nİ BURAYA SABİTLEDİM:
-        # Böylece app.py dosyası ID'yi kesinlikle bulacak.
+        # ID okuma sorununu çözdüğümüz SABİT AYAR (Bunu değiştirmedim, garanti olsun):
         TELEGRAM_CHAT_ID: "-1003588305277"
         TELEGRAM_GRUP_ID: "-1003588305277"
         TELEGRAM_KISISEL_ID: "-1003588305277"
         
-        # Binance anahtarlarını SİLDİM (BIST için gerek yok)
       run: python app.py
 
     - name: Hafızayı Güncelle (Commit & Push)
@@ -47,8 +45,3 @@ jobs:
         git config --global user.email "action@github.com"
         git add .
         git diff --quiet && git diff --staged --quiet || (git commit -m "SNIPER: İşlem Günlüğü Güncellendi" && git push)
-
-    - name: TELEGRAM TEST MESAJI GONDER
-      # Buraya da ID'yi elle yazdım, hata şansı %0
-      run: |
-        curl -s -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage -d chat_id=-1003588305277 -d text="✅ SNIPER: BIST Taraması ve Bağlantı Başarılı!"
